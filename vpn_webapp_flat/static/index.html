@@ -197,11 +197,14 @@
   .regions-scroll { display: flex; gap: 8px; padding: 0 16px 4px; margin-bottom: 24px; overflow-x: auto; scrollbar-width: none; }
   .regions-scroll::-webkit-scrollbar { display: none; }
   .region-chip {
-    flex-shrink: 0; display: flex; align-items: center; gap: 5px;
+    flex-shrink: 0; display: flex; align-items: center; gap: 5px; cursor: pointer;
     font-size: 12px; font-weight: 600; color: var(--dim);
     background: var(--card); border: 1px solid var(--border); border-radius: 100px; padding: 7px 13px;
+    transition: box-shadow .15s ease, color .15s ease, border-color .15s ease;
   }
   .region-chip svg { width: 13px; height: 13px; color: var(--orange); }
+  .region-chip.active { color: var(--text); border-color: var(--border-h); box-shadow: var(--selected-glow); }
+  .region-chip.locked { opacity: 0.4; cursor: not-allowed; }
 
   /* ── FEATURES GRID (generic marketing) ── */
   .features { padding: 0 16px; margin-bottom: 26px; }
@@ -216,6 +219,9 @@
   .feat-sub { font-size: 11px; color: var(--muted); line-height: 1.4; position: relative; }
 
   /* ── PAY BAR ── */
+  /* На экране «Магазин» pay-bar фиксирована поверх контента — без этого запаса
+     последний блок (features-grid) скрывается под кнопкой оплаты. */
+  #screen-shop { padding-bottom: 96px; }
   .pay-bar { position: fixed; left: 0; right: 0; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom)); padding: 12px 16px; background: linear-gradient(to top, var(--bg) 60%, transparent); z-index: 100; display: none; }
   .pay-bar.show { display: block; }
   .pay-btn { width: 100%; height: 56px; border-radius: 16px; border: none; background: linear-gradient(135deg, #7c3aed, #b794ff); color: white; font-family: var(--sans); font-size: 15.5px; font-weight: 700; cursor: pointer; position: relative; overflow: hidden; transition: opacity 0.2s, transform 0.15s; box-shadow: 0 8px 34px rgba(124,58,237,0.5); display: flex; align-items: center; justify-content: center; gap: 10px; letter-spacing: -0.2px; }
@@ -1349,6 +1355,7 @@ if (tg) { tg.ready(); tg.expand(); tg.setHeaderColor('#050307'); tg.setBackgroun
 let selTariff = 'standard';
 let selDevices = 1;
 let selPeriod = 'month';
+let selRegion = null;
 
 function renderTariffTabs() {
   const wrap = document.getElementById('tariffTabs');
@@ -1419,11 +1426,28 @@ function renderPriceSummary() {
 
 function renderRegions() {
   const wrap = document.getElementById('regionsScroll');
-  wrap.innerHTML = CONFIG.regions.map(([name, premium]) => `
-    <div class="region-chip">${premium ? '<svg class="icon"><use href="#i-star"/></svg>' : ''}${name}</div>`).join('');
+  const premiumOk = CONFIG.plans[selTariff].premiumAccess;
+  const available = CONFIG.regions.filter(([, premium]) => premiumOk || !premium);
+  if (!selRegion || !available.some(([name]) => name === selRegion)) {
+    selRegion = available[0] ? available[0][0] : null;
+  }
+  wrap.innerHTML = CONFIG.regions.map(([name, premium]) => {
+    const locked = premium && !premiumOk;
+    const active = name === selRegion;
+    return `<div class="region-chip ${active ? 'active' : ''} ${locked ? 'locked' : ''}"
+                 onclick="${locked ? '' : `selectRegion('${name}')`}">
+              ${premium ? '<svg class="icon"><use href="#i-star"/></svg>' : ''}${name}
+            </div>`;
+  }).join('');
 }
 
-function selectTariff(key) { selTariff = key; renderTariffTabs(); renderTariffInfo(); renderPeriodChips(); renderPriceSummary(); if (tg) tg.HapticFeedback?.selectionChanged(); }
+function selectRegion(name) {
+  selRegion = name;
+  renderRegions();
+  if (tg) tg.HapticFeedback?.selectionChanged();
+}
+
+function selectTariff(key) { selTariff = key; renderTariffTabs(); renderTariffInfo(); renderPeriodChips(); renderPriceSummary(); renderRegions(); if (tg) tg.HapticFeedback?.selectionChanged(); }
 function selectDevices(d) { selDevices = d; renderDeviceChips(); renderPeriodChips(); renderPriceSummary(); if (tg) tg.HapticFeedback?.selectionChanged(); }
 function selectPeriod(key) { selPeriod = key; renderPeriodChips(); renderPriceSummary(); if (tg) tg.HapticFeedback?.selectionChanged(); }
 
@@ -1474,6 +1498,15 @@ function showScreen(name) {
 // ══════════════════════ Pay ══════════════════════
 async function handlePay() {
   const userId = tg?.initDataUnsafe?.user?.id || null;
+  if (!selRegion) { alert('Выбери сервер (регион)'); return; }
+
+  // Если уже есть неоплаченный заказ с оплатой вне Telegram (lava/crypto) — сначала
+  // проверим его, а не плодим новые (чтобы не резервировать конфиги повторно).
+  if (pendingOrder && (pendingOrder.method === 'lava' || pendingOrder.method === 'crypto')) {
+    const done = await checkPendingPayment();
+    if (done) return;
+  }
+
   document.getElementById('loadingOverlay').classList.add('show');
   if (tg) tg.HapticFeedback?.impactOccurred('medium');
 
@@ -1485,14 +1518,24 @@ async function handlePay() {
         tariff: selTariff,
         devices: selDevices,
         period: selPeriod,
-        price: CONFIG.plans[selTariff].prices[selDevices][selPeriod],
+        region: selRegion,
         user_id: userId,
         init_data: tg?.initData || ''
       })
     });
     const data = await resp.json();
-    if (data.payment_url) {
-      document.getElementById('loadingOverlay').classList.remove('show');
+    document.getElementById('loadingOverlay').classList.remove('show');
+    if (data.paid) {
+      // Оплачено полностью бонусами/лояльностью — конфиг уже выслан ботом в чат.
+      pendingOrder = null;
+      document.getElementById('successOverlay').classList.add('show');
+      if (tg) { tg.HapticFeedback?.notificationOccurred('success'); setTimeout(() => tg.close(), 2500); }
+    } else if (data.payment_url) {
+      if (data.method === 'lava' || data.method === 'crypto') {
+        pendingOrder = { order_id: data.order_id, method: data.method, invoice_id: data.invoice_id };
+      } else {
+        pendingOrder = null; // stars/yookassa подтверждаются самим ботом
+      }
       if (tg) { tg.openLink(data.payment_url); } else { window.open(data.payment_url, '_blank'); }
     } else {
       throw new Error(data.error || 'Ошибка создания платежа');
@@ -1503,6 +1546,39 @@ async function handlePay() {
     if (tg) tg.HapticFeedback?.notificationOccurred('error');
   }
 }
+
+let pendingOrder = null;
+
+// Возвращает true, если заказ оплачен и уже обработан.
+async function checkPendingPayment() {
+  if (!pendingOrder) return false;
+  try {
+    const r = await fetch('/check_payment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        order_id: pendingOrder.order_id,
+        method: pendingOrder.method,
+        invoice_id: pendingOrder.invoice_id,
+        init_data: tg?.initData || ''
+      })
+    });
+    const d = await r.json();
+    if (d.status === 'paid') {
+      pendingOrder = null;
+      document.getElementById('successOverlay').classList.add('show');
+      if (tg) { tg.HapticFeedback?.notificationOccurred('success'); setTimeout(() => tg.close(), 2500); }
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
+// Когда пользователь возвращается в мини-апп после оплаты (закрыл браузер оплаты) —
+// автоматически проверяем незавершённый заказ.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') checkPendingPayment();
+});
 
 function handlePrimeBuy() {
   sendToBot('/prime_' + primePeriod);
