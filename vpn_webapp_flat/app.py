@@ -23,6 +23,7 @@ import hmac
 import json
 import logging
 import os
+import asyncio
 from datetime import timedelta
 from urllib.parse import parse_qsl
 
@@ -312,10 +313,15 @@ async def api_admin_stats(request):
 async def on_startup(app: web.Application):
     await db.init_db()
     await store.load_from_db()
-    log.info("Веб-сервер поднят (бот запускается отдельно, см. bot.py).")
+    import bot as bot_module  # твой bot.py — без единой правки
+    app["bot_task"] = asyncio.create_task(bot_module.main())
+    log.info("Бот запущен как фоновая задача, веб-сервер поднят.")
 
 
 async def on_cleanup(app: web.Application):
+    task = app.get("bot_task")
+    if task:
+        task.cancel()
     await bot.session.close()
 
 
