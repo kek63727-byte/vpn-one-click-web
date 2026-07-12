@@ -29,7 +29,7 @@ import texts
 from config import (
     BOT_TOKEN, DEVICE_TITLE, PAYMENT_MODE, PERIOD_TITLE, PLANS, PLAN_ORDER,
     PRIME_DEVICES, PRIME_ENABLED, PRIME_PERIOD, PRIME_PLAN, PRIME_PRICES,
-    TOPUP_PRESETS,
+    SUPPORT_USERNAME, TOPUP_PRESETS,
 )
 from payments import (
     check_crypto_invoice, check_lava_invoice, create_crypto_invoice,
@@ -96,6 +96,18 @@ async def _bot():
     return Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 
 
+_bot_username_cache: dict = {}
+
+
+async def _get_bot_username() -> str:
+    if "value" in _bot_username_cache:
+        return _bot_username_cache["value"]
+    async with await _bot() as bot:
+        me = await bot.get_me()
+        _bot_username_cache["value"] = me.username
+        return me.username
+
+
 # ────────────────────────────────────────────────────────────────
 # Статика
 # ────────────────────────────────────────────────────────────────
@@ -137,6 +149,8 @@ def api_plans():
             "prime": prime,
             "topup_presets": TOPUP_PRESETS,
             "payment_mode": PAYMENT_MODE,
+            "bot_username": await _get_bot_username(),
+            "support_username": SUPPORT_USERNAME,
         }
     return jsonify(run(_go()))
 
@@ -169,6 +183,21 @@ def api_profile():
             ],
         }
     return jsonify(run(_go()))
+
+
+# ────────────────────────────────────────────────────────────────
+# POST /api/payments — история платежей (пополнения + оплаченные заказы)
+# ────────────────────────────────────────────────────────────────
+@app.route("/api/payments", methods=["POST"])
+def api_payments():
+    user, err = require_user()
+    if err:
+        return err
+    uid = user["id"]
+
+    async def _go():
+        return await db.pay_history(uid, limit=30)
+    return jsonify({"items": run(_go())})
 
 
 # ────────────────────────────────────────────────────────────────
