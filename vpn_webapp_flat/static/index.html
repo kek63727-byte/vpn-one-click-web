@@ -3,626 +3,1477 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>VPN — выбор тарифа</title>
+<title>1ClickVPN</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&family=Space+Mono:wght@400;700&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Mono:wght@400;700&display=swap');
 
   :root {
-    --bg:       #0a0a0f;
-    --surface:  #111118;
-    --card:     #16161f;
-    --border:   rgba(255,255,255,0.07);
-    --border-h: rgba(99,102,241,0.5);
-    --accent:   #6366f1;
-    --accent2:  #818cf8;
+    --bg:       #050307;
+    --surface:  #0e0a16;
+    --card:     #130e1e;
+    --card2:    #181026;
+    --border:   rgba(168,120,255,0.10);
+    --border-h: rgba(168,85,247,0.6);
+    --accent:   #7c3aed;
+    --accent2:  #b794ff;
+    --accent-deep: #4c1d95;
     --green:    #22c55e;
-    --text:     #f1f5f9;
-    --muted:    #64748b;
-    --dim:      #94a3b8;
+    --red:      #ef4444;
+    --orange:   #f59e0b;
+    --pink:     #ec4899;
+    --cyan:     #22d3ee;
+    --gold:     #f6c453;
+    --text:     #f6f4ff;
+    --muted:    #6f6884;
+    --dim:      #a89fc4;
     --mono:     'Space Mono', monospace;
     --sans:     'Inter', sans-serif;
-    --radius:   16px;
-    --selected-glow: 0 0 0 1.5px #6366f1, 0 0 24px rgba(99,102,241,0.25);
+    --radius:   18px;
+    --selected-glow: 0 0 0 1.5px #a855f7, 0 0 28px rgba(168,85,247,0.35);
+    --nav-h: 66px;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-
   html { background: var(--bg); }
-
   body {
     font-family: var(--sans);
     background: var(--bg);
     color: var(--text);
     min-height: 100vh;
-    padding: 0 0 120px;
+    padding: 0 0 calc(var(--nav-h) + env(safe-area-inset-bottom) + 12px);
     overflow-x: hidden;
+    position: relative;
   }
+  a { color: inherit; text-decoration: none; }
+  button { font-family: inherit; }
+  svg.icon { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; display: block; }
+
+  /* ── premium grain overlay ── */
+  .grain { position: fixed; inset: 0; z-index: 1; pointer-events: none; opacity: 0.035; mix-blend-mode: overlay; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+
+  /* ── per-screen ambient mesh ── */
+  .brand-mesh { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+  .brand-mesh svg { position: absolute; width: 100%; height: 100%; }
+  .mesh-layer { position: absolute; inset: 0; opacity: 0; transition: opacity .55s ease; }
+  .mesh-layer.active { opacity: 1; }
+  .app-shell { position: relative; z-index: 2; }
+
+  .screen { display: none; position: relative; }
+  .screen.active { display: block; animation: fadeIn 0.18s ease; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* ══════════════════════ THEME GLOW (свой фон под каждый раздел) ══════════════════════ */
+  .theme-glow { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+  .theme-layer { position: absolute; inset: 0; opacity: 0; transition: opacity .5s ease; }
+  .theme-layer.active { opacity: 1; }
+  .theme-layer[data-screen="shop"] {
+    background:
+      radial-gradient(600px 420px at 88% -8%, rgba(124,58,237,0.30), transparent 62%),
+      radial-gradient(520px 380px at -14% 20%, rgba(168,85,247,0.14), transparent 60%),
+      radial-gradient(640px 520px at 50% 105%, rgba(76,29,149,0.20), transparent 65%);
+  }
+  .theme-layer[data-screen="connections"] {
+    background:
+      radial-gradient(600px 420px at 90% -8%, rgba(34,211,238,0.22), transparent 60%),
+      radial-gradient(520px 380px at -12% 24%, rgba(124,58,237,0.16), transparent 62%),
+      radial-gradient(640px 520px at 50% 105%, rgba(8,145,178,0.18), transparent 65%);
+  }
+  .theme-layer[data-screen="prime"] {
+    background:
+      radial-gradient(640px 440px at 92% -10%, rgba(246,196,83,0.26), transparent 60%),
+      radial-gradient(520px 400px at -14% 30%, rgba(124,58,237,0.20), transparent 62%),
+      radial-gradient(660px 540px at 50% 108%, rgba(120,53,15,0.16), transparent 65%);
+  }
+  .theme-layer[data-screen="profile"] {
+    background:
+      radial-gradient(600px 420px at 88% -8%, rgba(236,72,153,0.20), transparent 60%),
+      radial-gradient(520px 380px at -12% 22%, rgba(124,58,237,0.18), transparent 62%),
+      radial-gradient(640px 520px at 50% 105%, rgba(76,29,149,0.18), transparent 65%);
+  }
+  .theme-layer[data-screen="admin"] {
+    background:
+      radial-gradient(600px 420px at 88% -8%, rgba(239,68,68,0.22), transparent 60%),
+      radial-gradient(520px 380px at -12% 22%, rgba(124,58,237,0.18), transparent 62%),
+      radial-gradient(640px 520px at 50% 105%, rgba(127,29,29,0.20), transparent 65%);
+  }
+
+  /* ── HEADER ── */
+  .app-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 20px 4px; }
+  .app-header h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.4px; }
+  .icon-btn { width: 38px; height: 38px; border-radius: 12px; background: var(--card); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; color: var(--dim); cursor: pointer; }
+  .icon-btn:active { transform: scale(0.94); }
 
   /* ── HERO ── */
-  .hero {
-    position: relative;
-    padding: 48px 20px 32px;
-    text-align: center;
-    overflow: hidden;
+  .hero { position: relative; padding: 48px 20px 28px; text-align: center; overflow: hidden; }
+  .hero::before { content: ''; position: absolute; top: -70px; left: 50%; transform: translateX(-50%); width: 340px; height: 340px; background: radial-gradient(circle, rgba(168,85,247,0.22) 0%, transparent 70%); pointer-events: none; }
+  .logo-mark { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 76px; height: 76px; margin-bottom: 18px; }
+  .logo-mark svg { width: 76px; height: 76px; overflow: visible; }
+  .logo-ring { fill: none; stroke: url(#logoRingGrad); stroke-width: 2; filter: drop-shadow(0 0 10px rgba(168,85,247,0.55)); }
+  .logo-spark { animation: sparkMove 3.2s ease-in-out infinite; }
+  @keyframes sparkMove { 0%,100% { opacity: 0.2; } 50% { opacity: 1; } }
+  .hero h1 { font-size: 27px; font-weight: 900; letter-spacing: -0.6px; line-height: 1.15; margin-bottom: 8px; background: linear-gradient(135deg, #ffffff 25%, #c9a9ff 65%, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .hero p { font-size: 13.5px; color: var(--muted); line-height: 1.6; }
+  .status-row { display: flex; justify-content: center; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+  .pill { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 100px; font-size: 11px; font-weight: 600; font-family: var(--mono); letter-spacing: 0.3px; background: rgba(34,197,94,0.1); color: var(--green); border: 1px solid rgba(34,197,94,0.2); }
+  .pill.blue { background: rgba(124,58,237,0.14); color: var(--accent2); border-color: rgba(168,85,247,0.28); }
+  .pill.gold { background: rgba(246,196,83,0.1); color: var(--gold); border-color: rgba(246,196,83,0.24); cursor: pointer; }
+  .pill-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  .section-label { font-size: 11px; font-weight: 600; font-family: var(--mono); color: var(--muted); letter-spacing: 1.5px; text-transform: uppercase; padding: 0 20px; margin-bottom: 12px; }
+  .section-title { font-size: 17px; font-weight: 800; letter-spacing: -0.3px; padding: 0 20px; margin-bottom: 12px; }
+  .section-row { display: flex; align-items: baseline; justify-content: space-between; padding: 0 20px; margin-bottom: 12px; }
+  .section-row .section-title { padding: 0; margin: 0; }
+  .section-row .section-note { font-size: 11.5px; color: var(--muted); }
+
+  /* ── TARIFF TABS ── */
+  .tariff-tabs { display: flex; gap: 8px; padding: 0 16px; margin-bottom: 12px; }
+  .tariff-badge { width: 34px; height: 34px; margin: 0 auto 6px; border-radius: 11px; display: flex; align-items: center; justify-content: center; position: relative; }
+  .tariff-badge svg { width: 17px; height: 17px; }
+  .tariff-badge::before { content: ''; position: absolute; inset: 0; border-radius: 11px; opacity: 0.16; }
+  .tb-standard { color: #b9a6ff; } .tb-standard::before { background: linear-gradient(140deg, #8b5cf6, #6d28d9); }
+  .tb-premium  { color: #ffd1e8; } .tb-premium::before  { background: linear-gradient(140deg, #ec4899, #a855f7); }
+  .tb-ultimate { color: #ffe9ae; } .tb-ultimate::before { background: linear-gradient(140deg, #f6c453, #a855f7); }
+  .tariff-info-badge { width: 40px; height: 40px; border-radius: 13px; display: flex; align-items: center; justify-content: center; position: relative; flex-shrink: 0; }
+  .tariff-info-badge svg { width: 20px; height: 20px; }
+  .tariff-info-badge::before { content: ''; position: absolute; inset: 0; border-radius: 13px; opacity: 0.18; }
+  .price-badge { width: 24px; height: 24px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; position: relative; vertical-align: -7px; margin-right: 6px; }
+  .price-badge svg { width: 13px; height: 13px; }
+  .price-badge::before { content: ''; position: absolute; inset: 0; border-radius: 8px; opacity: 0.2; }
+  .tariff-tab {
+    flex: 1; position: relative; padding: 14px 10px 12px; border-radius: 14px;
+    background: var(--card); border: 1.5px solid var(--border); text-align: center; cursor: pointer;
+    transition: border-color .15s, transform .1s, box-shadow .2s;
   }
-  .hero::before {
-    content: '';
-    position: absolute;
-    top: -60px; left: 50%;
-    transform: translateX(-50%);
-    width: 300px; height: 300px;
-    background: radial-gradient(circle, rgba(99,102,241,0.18) 0%, transparent 70%);
-    pointer-events: none;
+  .tariff-tab:active { transform: scale(0.97); }
+  .tariff-tab.active { border-color: var(--accent); box-shadow: var(--selected-glow); background: linear-gradient(160deg, #1a1128, #150f22); }
+  .tariff-emoji { font-size: 20px; line-height: 1; margin-bottom: 4px; }
+  .tariff-name { font-size: 12.5px; font-weight: 700; }
+  .tariff-tab .prem-star { position: absolute; top: 8px; right: 8px; color: var(--gold); }
+
+  /* ── TARIFF INFO CARD ── */
+  .tariff-info {
+    position: relative; overflow: hidden; margin: 0 16px 16px; transition: background .2s;
+  }
+  .tariff-info-bg { position: absolute; right: -20px; top: -20px; width: 150px; height: 150px; opacity: 0.09; pointer-events: none; }
+  .tariff-info-bg svg { width: 100%; height: 100%; }
+  .tariff-info-bg::before { display: none; }
+  .tariff-info-bg.tb-standard svg,.price-badge.tb-standard svg { color: #a78bfa; }
+  .tariff-info-bg.tb-premium svg,.price-badge.tb-premium svg { color: #f0abfc; }
+  .tariff-info-bg.tb-ultimate svg,.price-badge.tb-ultimate svg { color: #f6c453; }
+  .tariff-info-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; position: relative; }
+  .tariff-info-title { font-size: 15px; font-weight: 800; }
+  .tariff-speed { font-size: 11px; font-family: var(--mono); font-weight: 700; color: var(--accent2); background: rgba(99,102,241,0.12); padding: 3px 9px; border-radius: 100px; }
+  .tariff-feat-list { display: flex; flex-direction: column; gap: 7px; position: relative; }
+  .tariff-feat { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--dim); }
+  .tariff-feat svg { color: var(--green); flex-shrink: 0; width: 15px; height: 15px; }
+
+  /* ── SELECTOR ROWS (devices / period) ── */
+  .selector-row { display: flex; gap: 8px; padding: 0 16px; margin-bottom: 14px; }
+  .chip {
+    flex: 1; position: relative; padding: 11px 6px; border-radius: 12px;
+    background: var(--surface); border: 1.5px solid var(--border); text-align: center; cursor: pointer;
+    transition: border-color .15s, transform .1s;
+  }
+  .chip:active { transform: scale(0.96); }
+  .chip.active { border-color: var(--accent); background: rgba(99,102,241,0.08); }
+  .chip-title { font-size: 12.5px; font-weight: 700; color: var(--text); }
+  .chip-sub { font-size: 9.5px; color: var(--muted); font-family: var(--mono); margin-top: 1px; }
+  .chip-save {
+    position: absolute; top: -7px; right: -4px; font-size: 9px; font-weight: 700; font-family: var(--mono);
+    background: var(--green); color: #06240f; padding: 1px 5px; border-radius: 100px;
   }
 
-  .shield {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 72px; height: 72px;
-    margin-bottom: 20px;
+  /* ── PRICE SUMMARY ── */
+  .price-summary {
+    margin: 0 16px 16px; display: flex; align-items: center; justify-content: space-between;
   }
-  .shield svg { width: 72px; height: 72px; }
+  .price-summary-amount { font-size: 26px; font-weight: 900; font-family: var(--mono); letter-spacing: -0.6px; }
+  .price-summary-per { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+  .price-summary-devices { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dim); background: var(--surface); border: 1px solid var(--border); padding: 8px 12px; border-radius: 12px; }
 
-  .hero h1 {
-    font-size: 28px;
-    font-weight: 900;
-    letter-spacing: -0.5px;
-    line-height: 1.15;
-    margin-bottom: 8px;
-    background: linear-gradient(135deg, #f1f5f9 30%, #a5b4fc);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+  /* ── REGIONS ── */
+  .regions-scroll { display: flex; gap: 8px; padding: 0 16px 4px; margin-bottom: 24px; overflow-x: auto; scrollbar-width: none; }
+  .regions-scroll::-webkit-scrollbar { display: none; }
+  .region-chip {
+    flex-shrink: 0; display: flex; align-items: center; gap: 5px;
+    font-size: 12px; font-weight: 600; color: var(--dim);
+    background: var(--card); border: 1px solid var(--border); border-radius: 100px; padding: 7px 13px;
   }
-  .hero p {
-    font-size: 14px;
-    color: var(--muted);
-    line-height: 1.6;
-  }
+  .region-chip svg { width: 13px; height: 13px; color: var(--orange); }
 
-  /* ── STATUS PILLS ── */
-  .status-row {
-    display: flex;
-    justify-content: center;
-    gap: 8px;
-    margin-top: 20px;
-  }
-  .pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 5px 12px;
-    border-radius: 100px;
-    font-size: 11px;
-    font-weight: 600;
-    font-family: var(--mono);
-    letter-spacing: 0.3px;
-    background: rgba(34,197,94,0.1);
-    color: var(--green);
-    border: 1px solid rgba(34,197,94,0.2);
-  }
-  .pill.blue {
-    background: rgba(99,102,241,0.1);
-    color: var(--accent2);
-    border-color: rgba(99,102,241,0.2);
-  }
-  .pill-dot {
-    width: 6px; height: 6px;
-    border-radius: 50%;
-    background: currentColor;
-    animation: pulse 2s ease-in-out infinite;
-  }
-  @keyframes pulse {
-    0%,100% { opacity: 1; }
-    50% { opacity: 0.4; }
-  }
+  /* ── FEATURES GRID (generic marketing) ── */
+  .features { padding: 0 16px; margin-bottom: 26px; }
+  .features-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .feat { position: relative; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 6px; overflow: hidden; }
+  .feat::before { content: ''; position: absolute; right: -20px; top: -20px; width: 70px; height: 70px; border-radius: 50%; background: radial-gradient(circle, rgba(168,85,247,0.14), transparent 70%); pointer-events: none; }
+  .feat:nth-child(2)::before { background: radial-gradient(circle, rgba(34,197,94,0.14), transparent 70%); }
+  .feat:nth-child(3)::before { background: radial-gradient(circle, rgba(34,211,238,0.14), transparent 70%); }
+  .feat:nth-child(4)::before { background: radial-gradient(circle, rgba(246,196,83,0.14), transparent 70%); }
+  .feat-icon { color: var(--accent2); position: relative; }
+  .feat-title { font-size: 12px; font-weight: 600; color: var(--text); position: relative; }
+  .feat-sub { font-size: 11px; color: var(--muted); line-height: 1.4; position: relative; }
 
-  /* ── SECTION LABEL ── */
-  .section-label {
-    font-size: 11px;
-    font-weight: 600;
-    font-family: var(--mono);
-    color: var(--muted);
-    letter-spacing: 1.5px;
-    text-transform: uppercase;
-    padding: 0 20px;
-    margin-bottom: 12px;
-  }
-
-  /* ── PLANS ── */
-  .plans {
-    padding: 0 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    margin-bottom: 28px;
-  }
-
-  .plan-card {
-    position: relative;
-    background: var(--card);
-    border: 1.5px solid var(--border);
-    border-radius: var(--radius);
-    padding: 18px 18px 18px 56px;
-    cursor: pointer;
-    transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
-    user-select: none;
-    -webkit-user-select: none;
-    overflow: hidden;
-  }
-  .plan-card:active { transform: scale(0.985); }
-  .plan-card.selected {
-    border-color: var(--accent);
-    box-shadow: var(--selected-glow);
-    background: #13131e;
-  }
-  .plan-card.popular {
-    border-color: rgba(99,102,241,0.35);
-  }
-
-  /* shimmer on selected */
-  .plan-card.selected::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(135deg, rgba(99,102,241,0.05) 0%, transparent 60%);
-    pointer-events: none;
-  }
-
-  /* radio circle */
-  .plan-radio {
-    position: absolute;
-    left: 18px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 20px; height: 20px;
-    border-radius: 50%;
-    border: 1.5px solid var(--border-h);
-    background: transparent;
-    display: flex; align-items: center; justify-content: center;
-    transition: border-color 0.2s, background 0.2s;
-  }
-  .plan-card.selected .plan-radio {
-    border-color: var(--accent);
-    background: var(--accent);
-  }
-  .plan-radio-dot {
-    width: 7px; height: 7px;
-    border-radius: 50%;
-    background: white;
-    opacity: 0;
-    transform: scale(0);
-    transition: opacity 0.15s, transform 0.15s;
-  }
-  .plan-card.selected .plan-radio-dot {
-    opacity: 1;
-    transform: scale(1);
-  }
-
-  .plan-badge {
-    position: absolute;
-    top: 12px; right: 12px;
-    padding: 3px 9px;
-    border-radius: 100px;
-    font-size: 10px;
-    font-weight: 700;
-    font-family: var(--mono);
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-  }
-  .badge-popular {
-    background: rgba(99,102,241,0.15);
-    color: var(--accent2);
-    border: 1px solid rgba(99,102,241,0.3);
-  }
-  .badge-best {
-    background: rgba(34,197,94,0.12);
-    color: var(--green);
-    border: 1px solid rgba(34,197,94,0.25);
-  }
-
-  .plan-name {
-    font-size: 15px;
-    font-weight: 700;
-    color: var(--text);
-    margin-bottom: 2px;
-  }
-  .plan-desc {
-    font-size: 12px;
-    color: var(--muted);
-    margin-bottom: 8px;
-  }
-  .plan-price-row {
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
-  }
-  .plan-price {
-    font-size: 22px;
-    font-weight: 900;
-    font-family: var(--mono);
-    color: var(--text);
-    letter-spacing: -0.5px;
-  }
-  .plan-currency {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--dim);
-  }
-  .plan-per {
-    font-size: 11px;
-    color: var(--muted);
-    margin-left: 2px;
-  }
-  .plan-save {
-    font-size: 10px;
-    font-weight: 700;
-    font-family: var(--mono);
-    color: var(--green);
-    margin-left: auto;
-  }
-
-  /* ── FEATURES ── */
-  .features {
-    padding: 0 16px;
-    margin-bottom: 28px;
-  }
-  .features-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-  }
-  .feat {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 14px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .feat-icon {
-    font-size: 20px;
-    line-height: 1;
-  }
-  .feat-title {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text);
-  }
-  .feat-sub {
-    font-size: 11px;
-    color: var(--muted);
-    line-height: 1.4;
-  }
-
-  /* ── PROTOCOL SELECTOR ── */
-  .proto-section {
-    padding: 0 16px;
-    margin-bottom: 28px;
-  }
-  .proto-tabs {
-    display: flex;
-    gap: 6px;
-    background: var(--surface);
-    border-radius: 12px;
-    padding: 4px;
-    border: 1px solid var(--border);
-  }
-  .proto-tab {
-    flex: 1;
-    padding: 9px 0;
-    border-radius: 9px;
-    font-size: 12px;
-    font-weight: 600;
-    font-family: var(--mono);
-    color: var(--muted);
-    text-align: center;
-    cursor: pointer;
-    transition: background 0.2s, color 0.2s;
-  }
-  .proto-tab.active {
-    background: var(--card);
-    color: var(--text);
-    border: 1px solid var(--border-h);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-  }
-
-  /* ── PAY BUTTON ── */
-  .pay-bar {
-    position: fixed;
-    bottom: 0; left: 0; right: 0;
-    padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
-    background: linear-gradient(to top, var(--bg) 70%, transparent);
-    z-index: 100;
-  }
-  .pay-btn {
-    width: 100%;
-    height: 56px;
-    border-radius: 16px;
-    border: none;
-    background: linear-gradient(135deg, #6366f1, #818cf8);
-    color: white;
-    font-family: var(--sans);
-    font-size: 16px;
-    font-weight: 700;
-    cursor: pointer;
-    position: relative;
-    overflow: hidden;
-    transition: opacity 0.2s, transform 0.15s;
-    box-shadow: 0 8px 32px rgba(99,102,241,0.4);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    letter-spacing: -0.2px;
-  }
+  /* ── PAY BAR ── */
+  .pay-bar { position: fixed; left: 0; right: 0; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom)); padding: 12px 16px; background: linear-gradient(to top, var(--bg) 60%, transparent); z-index: 100; display: none; }
+  .pay-bar.show { display: block; }
+  .pay-btn { width: 100%; height: 56px; border-radius: 16px; border: none; background: linear-gradient(135deg, #7c3aed, #b794ff); color: white; font-family: var(--sans); font-size: 15.5px; font-weight: 700; cursor: pointer; position: relative; overflow: hidden; transition: opacity 0.2s, transform 0.15s; box-shadow: 0 8px 34px rgba(124,58,237,0.5); display: flex; align-items: center; justify-content: center; gap: 10px; letter-spacing: -0.2px; }
   .pay-btn:active { transform: scale(0.97); opacity: 0.9; }
-  .pay-btn::before {
-    content: '';
-    position: absolute;
-    top: 0; left: -100%; width: 60%; height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
-    animation: shine 3s ease-in-out infinite;
-  }
-  @keyframes shine {
-    0% { left: -100%; }
-    40%,100% { left: 150%; }
-  }
-  .pay-amount {
-    font-family: var(--mono);
-    font-weight: 700;
-    font-size: 15px;
-    opacity: 0.85;
-    background: rgba(255,255,255,0.15);
-    padding: 4px 10px;
-    border-radius: 8px;
-  }
+  .pay-btn::before { content: ''; position: absolute; top: 0; left: -100%; width: 60%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent); animation: shine 3s ease-in-out infinite; }
+  @keyframes shine { 0% { left: -100%; } 40%,100% { left: 150%; } }
+  .pay-amount { font-family: var(--mono); font-weight: 700; font-size: 15px; opacity: 0.85; background: rgba(255,255,255,0.15); padding: 4px 10px; border-radius: 8px; }
 
-  /* ── LOADING ── */
-  .loading-overlay {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(10,10,15,0.85);
-    backdrop-filter: blur(8px);
-    z-index: 200;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 16px;
-  }
+  .divider { height: 1px; background: var(--border); margin: 0 16px 24px; }
+
+  /* ── BOTTOM NAV ── */
+  .bottom-nav { position: fixed; left: 0; right: 0; bottom: 0; height: calc(var(--nav-h) + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom); background: rgba(17,17,24,0.92); backdrop-filter: blur(16px); border-top: 1px solid var(--border); display: flex; z-index: 150; }
+  .nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: var(--muted); cursor: pointer; transition: color 0.15s; }
+  .nav-item svg { width: 22px; height: 22px; }
+  .nav-item span { font-size: 10.5px; font-weight: 600; }
+  .nav-item.active { color: var(--accent2); }
+  .nav-item:active { transform: scale(0.94); }
+
+  /* ── CARDS / PROFILE ── */
+  .card { position: relative; background: linear-gradient(165deg, #150f22, #110c1c); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; overflow: hidden; box-shadow: 0 10px 30px -14px rgba(0,0,0,0.6); }
+  .container { padding: 0 16px; display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; }
+  .user-card { display: flex; align-items: center; gap: 12px; }
+  .avatar { width: 44px; height: 44px; border-radius: 12px; background: linear-gradient(135deg, #7c3aed, #b794ff); display: flex; align-items: center; justify-content: center; color: white; flex-shrink: 0; }
+  .user-meta { min-width: 0; }
+  .user-name-row { display: flex; align-items: center; gap: 8px; }
+  .user-name { font-size: 15px; font-weight: 700; }
+  .tier-tag { font-size: 10px; font-weight: 700; font-family: var(--mono); padding: 2px 7px; border-radius: 100px; background: rgba(148,163,184,0.12); color: var(--dim); }
+  .tier-tag.prime { background: rgba(245,158,11,0.15); color: var(--orange); }
+  .user-id { font-size: 12px; color: var(--muted); font-family: var(--mono); margin-top: 2px; }
+
+  /* ── BALANCE CARD (with decorative illustration) ── */
+  .balance-card { position: relative; background: linear-gradient(135deg, #3b1272 0%, #7c3aed 55%, #b794ff 100%); border-radius: var(--radius); padding: 20px; overflow: hidden; color: white; box-shadow: 0 14px 40px -16px rgba(124,58,237,0.55); }
+  .balance-card::before { content: ''; position: absolute; inset: 0; opacity: 0.5; background-image: radial-gradient(rgba(255,255,255,0.16) 1px, transparent 1px); background-size: 14px 14px; mask-image: linear-gradient(135deg, black, transparent 70%); }
+  .balance-card::after { content: ''; position: absolute; right: -30px; top: -30px; width: 160px; height: 160px; background: radial-gradient(circle, rgba(255,255,255,0.16), transparent 70%); }
+  .balance-deco { position: absolute; right: -6px; bottom: -14px; width: 108px; height: 108px; color: rgba(255,255,255,0.14); transform: rotate(-8deg); pointer-events: none; }
+  .balance-label { display: flex; align-items: center; gap: 6px; font-size: 12px; opacity: 0.85; margin-bottom: 10px; position: relative; }
+  .balance-amount { font-size: 30px; font-weight: 900; font-family: var(--mono); letter-spacing: -1px; margin-bottom: 14px; position: relative; }
+  .topup-chips { display: flex; gap: 6px; margin-bottom: 12px; position: relative; }
+  .topup-chip { flex: 1; text-align: center; padding: 8px 0; border-radius: 10px; background: rgba(255,255,255,0.14); font-size: 12px; font-weight: 700; font-family: var(--mono); cursor: pointer; }
+  .topup-chip:active { transform: scale(0.95); }
+  .balance-btn { position: relative; width: 100%; padding: 12px; border-radius: 12px; border: none; background: rgba(255,255,255,0.18); backdrop-filter: blur(4px); color: white; font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; }
+  .balance-btn:active { transform: scale(0.98); }
+
+  /* ── PRIME TEASER ── */
+  .prime-teaser { display: flex; align-items: center; gap: 12px; cursor: pointer; }
+  .prime-teaser:active { transform: scale(0.99); }
+  .prime-teaser-icon { width: 42px; height: 42px; border-radius: 12px; flex-shrink: 0; background: rgba(245,158,11,0.15); color: var(--orange); display: flex; align-items: center; justify-content: center; }
+  .row-title { font-size: 14px; font-weight: 700; }
+  .row-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .row-arrow { margin-left: auto; color: var(--muted); flex-shrink: 0; }
+
+  /* ── REFERRAL ── */
+  .referral-code-box { display: flex; align-items: center; justify-content: space-between; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-top: 12px; }
+  .referral-code { font-family: var(--mono); font-weight: 700; font-size: 16px; color: var(--accent2); letter-spacing: 1px; }
+  .copy-btn { width: 34px; height: 34px; border-radius: 9px; border: none; background: rgba(99,102,241,0.12); color: var(--accent2); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  .copy-btn:active { transform: scale(0.92); }
+  .referral-stat { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 13px; color: var(--dim); }
+  .referral-stat b { color: var(--text); }
+  .milestone-row { display: flex; gap: 6px; margin-top: 12px; overflow-x: auto; scrollbar-width: none; }
+  .milestone-row::-webkit-scrollbar { display: none; }
+  .milestone-chip { flex-shrink: 0; text-align: center; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 7px 11px; }
+  .milestone-chip b { display: block; font-size: 12px; font-family: var(--mono); color: var(--green); }
+  .milestone-chip span { font-size: 9.5px; color: var(--muted); }
+
+  /* ── PROMO ── */
+  .promo-row { display: flex; gap: 8px; margin-top: 12px; }
+  .promo-input { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 0 14px; height: 44px; color: var(--text); font-size: 14px; font-family: var(--sans); }
+  .promo-input::placeholder { color: var(--muted); }
+  .promo-submit { width: 44px; height: 44px; border-radius: 12px; border: none; background: var(--accent); color: white; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
+  .promo-submit:active { transform: scale(0.94); }
+
+  /* ── QUICK GRID ── */
+  .quick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 16px; margin-bottom: 24px; }
+  .quick-item { position: relative; background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 10px; cursor: pointer; overflow: hidden; }
+  .quick-item::before { content: ''; position: absolute; right: -22px; top: -22px; width: 74px; height: 74px; border-radius: 50%; pointer-events: none; background: radial-gradient(circle, rgba(168,85,247,0.13), transparent 70%); }
+  .quick-item:has(.ic-green)::before  { background: radial-gradient(circle, rgba(34,197,94,0.14), transparent 70%); }
+  .quick-item:has(.ic-orange)::before { background: radial-gradient(circle, rgba(246,196,83,0.15), transparent 70%); }
+  .quick-item:has(.ic-cyan)::before   { background: radial-gradient(circle, rgba(34,211,238,0.14), transparent 70%); }
+  .quick-item:has(.ic-pink)::before   { background: radial-gradient(circle, rgba(236,72,153,0.14), transparent 70%); }
+  .quick-item:has(.ic-red)::before    { background: radial-gradient(circle, rgba(239,68,68,0.14), transparent 70%); }
+  .quick-item:active { transform: scale(0.97); }
+  .quick-icon { position: relative; width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
+  .quick-title { position: relative; font-size: 13px; font-weight: 700; }
+  .quick-sub { position: relative; font-size: 11px; color: var(--muted); line-height: 1.35; }
+  .ic-indigo { background: rgba(99,102,241,0.15); color: var(--accent2); }
+  .ic-green  { background: rgba(34,197,94,0.15);  color: var(--green); }
+  .ic-orange { background: rgba(245,158,11,0.15); color: var(--orange); }
+  .ic-cyan   { background: rgba(34,211,238,0.15); color: var(--cyan); }
+  .ic-pink   { background: rgba(236,72,153,0.15); color: var(--pink); }
+  .ic-red    { background: rgba(239,68,68,0.15);  color: var(--red); }
+
+  /* ── CONNECTIONS ── */
+  .conn-list { padding: 0 16px; display: flex; flex-direction: column; gap: 10px; margin-bottom: 24px; }
+  .conn-item { display: flex; align-items: center; gap: 12px; }
+  .conn-icon { width: 40px; height: 40px; border-radius: 11px; flex-shrink: 0; background: rgba(34,197,94,0.12); color: var(--green); display: flex; align-items: center; justify-content: center; }
+  .conn-icon.off { background: rgba(148,163,184,0.1); color: var(--muted); }
+  .conn-info { min-width: 0; flex: 1; }
+  .conn-name { font-size: 14px; font-weight: 700; }
+  .conn-meta { font-size: 12px; color: var(--muted); margin-top: 2px; font-family: var(--mono); }
+  .conn-status { font-size: 10px; font-weight: 700; font-family: var(--mono); padding: 3px 9px; border-radius: 100px; text-transform: uppercase; letter-spacing: 0.4px; flex-shrink: 0; }
+  .conn-status.active { background: rgba(34,197,94,0.12); color: var(--green); border: 1px solid rgba(34,197,94,0.25); }
+  .conn-status.expired { background: rgba(239,68,68,0.1); color: var(--red); border: 1px solid rgba(239,68,68,0.22); }
+
+  .empty-state { padding: 36px 24px; text-align: center; }
+  .empty-icon { width: 64px; height: 64px; border-radius: 18px; margin: 0 auto 16px; background: rgba(99,102,241,0.1); color: var(--accent2); display: flex; align-items: center; justify-content: center; }
+  .empty-title { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+  .empty-sub { font-size: 13px; color: var(--muted); line-height: 1.5; margin-bottom: 20px; }
+  .empty-btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px; border-radius: 12px; border: none; background: linear-gradient(135deg, #7c3aed, #b794ff); color: white; font-weight: 700; font-size: 14px; cursor: pointer; }
+  .empty-btn:active { transform: scale(0.97); }
+
+  /* ── PRIME SCREEN ── */
+  .prime-hero { position: relative; margin: 12px 16px 20px; border-radius: 20px; padding: 22px; overflow: hidden; background: radial-gradient(130% 110% at 100% 0%, rgba(246,196,83,0.16), transparent 50%), radial-gradient(90% 90% at 0% 100%, rgba(124,58,237,0.22), transparent 55%), linear-gradient(165deg, #150f22, #110c1c); border: 1px solid rgba(246,196,83,0.14); }
+  .prime-hero::after { content: ''; position: absolute; inset: 0; opacity: 0.4; background-image: linear-gradient(120deg, transparent 40%, rgba(246,196,83,0.08) 50%, transparent 60%); pointer-events: none; }
+  .prime-hero-deco { position: absolute; right: -18px; top: -10px; width: 150px; height: 150px; color: rgba(245,158,11,0.10); transform: rotate(12deg); pointer-events: none; }
+  .prime-badge { position: relative; display: inline-block; font-size: 10px; font-weight: 700; font-family: var(--mono); letter-spacing: 0.5px; text-transform: uppercase; padding: 4px 10px; border-radius: 100px; background: rgba(148,163,184,0.12); color: var(--dim); margin-bottom: 14px; }
+  .prime-badge.on { background: rgba(34,197,94,0.14); color: var(--green); }
+  .prime-hero-title { position: relative; font-size: 22px; font-weight: 900; letter-spacing: -0.4px; margin-bottom: 6px; }
+  .prime-hero-title b { background: linear-gradient(135deg, #fbbf24, #f59e0b); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .prime-hero-sub { position: relative; font-size: 13px; color: var(--muted); line-height: 1.5; margin-bottom: 16px; max-width: 230px; }
+  .prime-period-tabs { position: relative; display: flex; gap: 6px; background: var(--surface); border-radius: 12px; padding: 4px; border: 1px solid var(--border); margin-bottom: 16px; max-width: 220px; }
+  .prime-period-tab { flex: 1; padding: 8px 0; border-radius: 9px; font-size: 12px; font-weight: 700; font-family: var(--mono); color: var(--muted); text-align: center; cursor: pointer; position: relative; }
+  .prime-period-tab.active { background: var(--card); color: var(--text); border: 1px solid var(--border-h); }
+  .prime-period-tab .tab-save { position: absolute; top: -8px; right: -2px; font-size: 8.5px; font-weight: 700; background: var(--green); color: #06240f; padding: 1px 4px; border-radius: 100px; }
+  .prime-price { position: relative; font-size: 32px; font-weight: 900; font-family: var(--mono); letter-spacing: -1px; }
+  .prime-price span { font-size: 14px; font-weight: 600; color: var(--muted); font-family: var(--sans); }
+
+  .benefits { padding: 0 16px; margin-bottom: 22px; display: flex; flex-direction: column; gap: 10px; }
+  .benefit { display: flex; align-items: center; gap: 12px; }
+  .benefit-check { width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0; background: rgba(34,197,94,0.14); color: var(--green); display: flex; align-items: center; justify-content: center; }
+  .benefit-text { font-size: 13.5px; color: var(--text); font-weight: 500; }
+
+  .prime-actions { padding: 0 16px; display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+  .btn-primary { width: 100%; height: 52px; border-radius: 14px; border: none; background: linear-gradient(135deg, #f6c453, #fde68a); color: #241800; font-weight: 800; font-size: 15px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 10px 28px -10px rgba(246,196,83,0.5); }
+  .btn-primary:active { transform: scale(0.98); }
+  .btn-secondary { width: 100%; height: 52px; border-radius: 14px; border: 1.5px solid var(--border); background: transparent; color: var(--text); font-weight: 700; font-size: 14px; cursor: pointer; }
+  .btn-secondary:active { transform: scale(0.98); }
+  .prime-footnote { text-align: center; font-size: 11px; color: var(--muted); padding: 0 32px; line-height: 1.5; }
+
+  /* ── OVERLAYS ── */
+  .loading-overlay { display: none; position: fixed; inset: 0; background: rgba(10,10,15,0.85); backdrop-filter: blur(8px); z-index: 400; flex-direction: column; align-items: center; justify-content: center; gap: 16px; }
   .loading-overlay.show { display: flex; }
-  .spinner {
-    width: 44px; height: 44px;
-    border: 3px solid rgba(99,102,241,0.2);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
+  .spinner { width: 44px; height: 44px; border: 3px solid rgba(99,102,241,0.2); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .loading-text { font-size: 14px; color: var(--dim); }
-
-  /* ── SUCCESS ── */
-  .success-overlay {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: var(--bg);
-    z-index: 300;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 16px;
-    padding: 32px;
-    text-align: center;
-  }
+  .success-overlay { display: none; position: fixed; inset: 0; background: var(--bg); z-index: 500; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 32px; text-align: center; }
   .success-overlay.show { display: flex; }
-  .success-icon {
-    width: 80px; height: 80px;
-    border-radius: 50%;
-    background: rgba(34,197,94,0.12);
-    border: 2px solid rgba(34,197,94,0.3);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 36px;
-  }
-  .success-title {
-    font-size: 24px;
-    font-weight: 900;
-    letter-spacing: -0.5px;
-    color: var(--text);
-  }
-  .success-sub {
-    font-size: 14px;
-    color: var(--muted);
-    line-height: 1.6;
-    max-width: 280px;
-  }
-  .divider { height: 1px; background: var(--border); margin: 0 16px 24px; }
+  .success-icon { width: 80px; height: 80px; border-radius: 50%; background: rgba(34,197,94,0.12); border: 2px solid rgba(34,197,94,0.3); display: flex; align-items: center; justify-content: center; }
+  .success-title { font-size: 24px; font-weight: 900; letter-spacing: -0.5px; color: var(--text); }
+  .success-sub { font-size: 14px; color: var(--muted); line-height: 1.6; max-width: 280px; }
+  .toast { position: fixed; left: 50%; bottom: calc(var(--nav-h) + 20px); transform: translate(-50%, 8px); opacity: 0; background: var(--card2); border: 1px solid var(--border); color: var(--text); font-size: 13px; font-weight: 600; padding: 10px 18px; border-radius: 100px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); z-index: 600; pointer-events: none; transition: opacity 0.2s, transform 0.2s; white-space: nowrap; }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  /* ══════════════════════ ONBOARDING v2 — premium ══════════════════════ */
+  .onboard { position: fixed; inset: 0; z-index: 900; background: #050307; display: none; flex-direction: column; opacity: 0; transition: opacity .32s ease; }
+  .onboard.show { display: flex; opacity: 1; }
+  .onboard-ambient { position: absolute; inset: 0; transition: background .6s ease; pointer-events: none; }
+  .onboard-ambient-mesh { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .onboard-ambient-mesh svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+  /* top bar */
+  .onboard-topbar { position: relative; z-index: 3; display: flex; align-items: center; justify-content: space-between; padding: calc(env(safe-area-inset-top) + 14px) 18px 0; }
+  .onboard-progress { display: flex; gap: 5px; flex: 1; }
+  .onboard-progress-seg { flex: 1; height: 2.5px; border-radius: 100px; background: rgba(255,255,255,0.1); overflow: hidden; }
+  .onboard-progress-seg i { display: block; height: 100%; width: 0%; border-radius: 100px; background: linear-gradient(90deg, #b794ff, #f6c453); transition: width .35s ease; }
+  .onboard-progress-seg.done i { width: 100%; }
+  .onboard-skip { font-size: 12px; font-weight: 700; font-family: var(--mono); color: rgba(255,255,255,0.3); background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); padding: 6px 13px; border-radius: 100px; cursor: pointer; transition: color .2s; white-space: nowrap; margin-left: 14px; }
+  .onboard-skip:hover { color: rgba(255,255,255,0.55); }
+  .onboard-skip:active { transform: scale(0.95); }
+
+  /* slides */
+  .onboard-slides { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+  .onboard-slide { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 8px 28px 0; text-align: center; opacity: 0; transform: translateX(32px); transition: opacity .38s ease, transform .38s ease; pointer-events: none; }
+  .onboard-slide.active { opacity: 1; transform: translateX(0); pointer-events: auto; }
+  .onboard-slide.exit { opacity: 0; transform: translateX(-32px); }
+
+  /* hero illustration area */
+  .onboard-visual { position: relative; width: 100%; max-width: 300px; margin: 0 auto 24px; }
+  .onboard-ring-outer { position: absolute; inset: -16px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.06); animation: onbRotateOuter 12s linear infinite; }
+  .onboard-ring-mid { position: absolute; inset: -6px; border-radius: 50%; border: 1px dashed rgba(255,255,255,0.07); animation: onbRotateOuter 8s linear infinite reverse; }
+  @keyframes onbRotateOuter { to { transform: rotate(360deg); } }
+
+  /* slide 0: welcome */
+  .onb-welcome-visual { width: 152px; height: 152px; margin: 0 auto; position: relative; display: flex; align-items: center; justify-content: center; }
+  .onb-welcome-glow { position: absolute; inset: 0; border-radius: 50%; }
+  .onb-welcome-icon { position: relative; width: 88px; height: 88px; border-radius: 28px; display: flex; align-items: center; justify-content: center; }
+  .onb-welcome-icon svg { width: 40px; height: 40px; }
+  .onb-orb-1, .onb-orb-2, .onb-orb-3 { position: absolute; border-radius: 50%; }
+
+  /* slide 1–3: nav preview */
+  .onb-nav-preview { width: 100%; max-width: 320px; margin: 0 auto; }
+  .onb-nav-mock { display: flex; background: rgba(17,17,24,0.85); border: 1px solid rgba(168,85,247,0.15); border-radius: 16px; padding: 10px 6px; gap: 2px; backdrop-filter: blur(8px); }
+  .onb-nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 4px; border-radius: 11px; transition: background .25s; }
+  .onb-nav-item svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .onb-nav-item span { font-size: 9.5px; font-weight: 600; }
+  .onb-nav-item.dim { color: rgba(255,255,255,0.22); }
+  .onb-nav-item.lit { color: #b794ff; background: rgba(168,85,247,0.12); }
+  .onb-nav-item.lit-cyan { color: #22d3ee; background: rgba(34,211,238,0.1); }
+  .onb-nav-item.lit-gold { color: #f6c453; background: rgba(246,196,83,0.1); }
+  .onb-nav-item.lit-pink { color: #f472b6; background: rgba(236,72,153,0.1); }
+
+  .onb-screen-preview { width: 100%; background: rgba(13,10,22,0.7); border: 1px solid rgba(255,255,255,0.07); border-radius: 16px; padding: 14px; margin-bottom: 10px; min-height: 130px; display: flex; flex-direction: column; gap: 10px; position: relative; overflow: hidden; }
+  .onb-screen-preview::before { content: ''; position: absolute; inset: 0; border-radius: 16px; }
+  .onb-preview-row { display: flex; align-items: center; gap: 10px; }
+  .onb-preview-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .onb-preview-line { height: 8px; border-radius: 100px; background: rgba(255,255,255,0.08); flex: 1; }
+  .onb-preview-line.w60 { flex: 0.6; }
+  .onb-preview-line.w40 { flex: 0.4; }
+  .onb-preview-box { height: 36px; border-radius: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.07); display: flex; align-items: center; padding: 0 12px; gap: 8px; }
+  .onb-preview-box-icon { width: 18px; height: 18px; border-radius: 6px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+  .onb-preview-tag { height: 20px; border-radius: 100px; padding: 0 10px; display: inline-flex; align-items: center; font-size: 9px; font-weight: 700; font-family: var(--mono); }
+
+  .onboard-eyebrow { font-size: 11px; font-weight: 700; font-family: var(--mono); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px; }
+  .onboard-title { font-size: 24px; font-weight: 900; letter-spacing: -0.5px; line-height: 1.22; margin-bottom: 10px; color: #fff; }
+  .onboard-desc { font-size: 13.5px; color: var(--dim); line-height: 1.6; max-width: 290px; margin-bottom: 18px; }
+  .onboard-chips { display: flex; gap: 7px; flex-wrap: wrap; justify-content: center; }
+  .onboard-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; font-family: var(--mono); padding: 6px 11px; border-radius: 100px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); color: var(--dim); }
+  .onboard-chip svg { width: 11px; height: 11px; }
+
+  /* ── ADMIN SCREEN ── */
+  .admin-header-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; font-family: var(--mono); color: var(--red); background: rgba(239,68,68,0.10); border: 1px solid rgba(239,68,68,0.22); padding: 4px 10px; border-radius: 100px; }
+  .admin-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 16px; margin-bottom: 16px; }
+  .admin-stat { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 4px; position: relative; overflow: hidden; }
+  .admin-stat::before { content: ''; position: absolute; right: -16px; top: -16px; width: 60px; height: 60px; border-radius: 50%; background: radial-gradient(circle, rgba(239,68,68,0.12), transparent 70%); pointer-events: none; }
+  .admin-stat:nth-child(2)::before { background: radial-gradient(circle, rgba(34,197,94,0.12), transparent 70%); }
+  .admin-stat:nth-child(3)::before { background: radial-gradient(circle, rgba(34,211,238,0.12), transparent 70%); }
+  .admin-stat:nth-child(4)::before { background: radial-gradient(circle, rgba(246,196,83,0.12), transparent 70%); }
+  .admin-stat-value { font-size: 24px; font-weight: 900; font-family: var(--mono); letter-spacing: -0.5px; }
+  .admin-stat-label { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+  .admin-stat-delta { font-size: 10px; font-weight: 700; color: var(--green); }
+  .admin-action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 16px; margin-bottom: 16px; }
+  .admin-action { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px 12px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: border-color .15s, transform .1s; }
+  .admin-action:active { transform: scale(0.97); }
+  .admin-action:hover { border-color: rgba(239,68,68,0.35); }
+  .admin-action-icon { width: 36px; height: 36px; border-radius: 11px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .admin-action-icon.ic-red   { background: rgba(239,68,68,0.12); color: var(--red); }
+  .admin-action-icon.ic-green { background: rgba(34,197,94,0.12); color: var(--green); }
+  .admin-action-icon.ic-cyan  { background: rgba(34,211,238,0.12); color: var(--cyan); }
+  .admin-action-icon.ic-orange{ background: rgba(245,158,11,0.12); color: var(--orange); }
+  .admin-action-icon.ic-violet{ background: rgba(124,58,237,0.12); color: var(--accent2); }
+  .admin-action-icon.ic-gold  { background: rgba(246,196,83,0.12); color: var(--gold); }
+  .admin-action-icon.ic-pink  { background: rgba(236,72,153,0.12); color: var(--pink); }
+  .admin-action-title { font-size: 12.5px; font-weight: 700; line-height: 1.2; }
+  .admin-action-sub   { font-size: 10.5px; color: var(--muted); margin-top: 1px; }
+  .admin-section { font-size: 11px; font-weight: 700; font-family: var(--mono); color: var(--muted); letter-spacing: 1.4px; text-transform: uppercase; padding: 0 16px; margin: 16px 0 10px; }
+  .admin-nav-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); box-shadow: 0 0 6px var(--red); animation: pulse 1.8s ease-in-out infinite; position: absolute; top: 6px; right: 6px; display: none; }
+  .nav-item.admin-nav { position: relative; }
+  .nav-item.admin-nav.has-alert .admin-nav-dot { display: block; }
+
+  /* tones */
+  .onb-violet .onboard-eyebrow { color: #c9a9ff; }
+  .onb-violet .onboard-chip { border-color: rgba(168,85,247,0.3); } .onb-violet .onboard-chip svg { color: #c9a9ff; }
+  .onb-cyan .onboard-eyebrow { color: #67e8f9; }
+  .onb-cyan .onboard-chip { border-color: rgba(34,211,238,0.3); } .onb-cyan .onboard-chip svg { color: #67e8f9; }
+  .onb-gold .onboard-eyebrow { color: #fde68a; }
+  .onb-gold .onboard-chip { border-color: rgba(246,196,83,0.3); } .onb-gold .onboard-chip svg { color: #fde68a; }
+  .onb-pink .onboard-eyebrow { color: #f9a8d4; }
+  .onb-pink .onboard-chip { border-color: rgba(236,72,153,0.3); } .onb-pink .onboard-chip svg { color: #f9a8d4; }
+
+  /* bottom */
+  .onboard-bottom { position: relative; z-index: 2; padding: 10px 20px calc(env(safe-area-inset-bottom) + 20px); display: flex; flex-direction: column; gap: 14px; }
+  .onboard-dots { display: flex; justify-content: center; gap: 6px; }
+  .onboard-dot { width: 6px; height: 6px; border-radius: 100px; background: rgba(255,255,255,0.12); transition: width .28s, background .28s; }
+  .onboard-dot.active { width: 20px; background: linear-gradient(90deg, #7c3aed, #b794ff); }
+  .onboard-next { width: 100%; height: 56px; border-radius: 16px; border: none; background: linear-gradient(135deg, #7c3aed, #b794ff); color: white; font-size: 15.5px; font-weight: 800; letter-spacing: -0.2px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; box-shadow: 0 10px 34px -8px rgba(124,58,237,0.55); transition: transform .15s, box-shadow .15s; }
+  .onboard-next:active { transform: scale(0.98); box-shadow: 0 6px 20px -6px rgba(124,58,237,0.5); }
+  .onboard-next.finishing { background: linear-gradient(135deg, #059669, #34d399); box-shadow: 0 10px 34px -8px rgba(52,211,153,0.45); }
+  @keyframes onbSpin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
 
-<!-- ── HERO ── -->
-<div class="hero">
-  <div class="shield">
-    <svg viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+<div class="grain"></div>
+<div class="brand-mesh" aria-hidden="true">
+
+  <!-- ADMIN theme layer -->
+  <div class="theme-layer" data-screen="admin"></div>
+
+  <!-- SHOP mesh: shield + bag + lock icons -->
+  <div class="mesh-layer active" data-screen="shop">
+    <svg viewBox="0 0 400 900" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <radialGradient id="sg" cx="50%" cy="30%" r="60%">
-          <stop offset="0%" stop-color="#818cf8"/>
-          <stop offset="100%" stop-color="#6366f1"/>
-        </radialGradient>
+        <g id="bm-shield">
+          <path d="M0 -14 L11 -9.5 L11 -2 C11 6 5.5 11 0 13 C-5.5 11 -11 6 -11 -2 L-11 -9.5 Z" fill="none" stroke="#a855f7" stroke-width="1.3"/>
+          <path d="M-4 0 L-1.5 2.5 L4.5 -3" fill="none" stroke="#a855f7" stroke-width="1.2" stroke-linecap="round"/>
+        </g>
+        <g id="bm-bag">
+          <rect x="-10" y="-8" width="20" height="16" rx="3" fill="none" stroke="#7c3aed" stroke-width="1.3"/>
+          <path d="M-5 -8 L-5 -11 C-5 -14 5 -14 5 -11 L5 -8" fill="none" stroke="#7c3aed" stroke-width="1.3"/>
+        </g>
+        <g id="bm-lock">
+          <rect x="-7" y="-4" width="14" height="11" rx="2.5" fill="none" stroke="#b794ff" stroke-width="1.2"/>
+          <path d="M-4 -4 L-4 -7 C-4 -11 4 -11 4 -7 L4 -4" fill="none" stroke="#b794ff" stroke-width="1.2"/>
+          <circle cx="0" cy="2" r="1.5" fill="#b794ff"/>
+        </g>
+        <g id="bm-vpn-word">
+          <text x="0" y="0" font-family="Inter, sans-serif" font-weight="900" font-size="11" letter-spacing="3" fill="#a855f7" opacity="0.6">1CLICKVPN</text>
+        </g>
       </defs>
-      <path d="M36 6L10 18v18c0 14.6 11.1 28.3 26 31.4C51.9 64.3 62 50.6 62 36V18L36 6z" fill="url(#sg)" opacity="0.15"/>
-      <path d="M36 10L13 21v15c0 12.7 9.8 24.5 23 27.2C49.2 60.5 59 48.7 59 36V21L36 10z" stroke="url(#sg)" stroke-width="1.5" fill="none"/>
-      <path d="M27 36l6 6 12-12" stroke="#818cf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <g opacity="0.09">
+        <use href="#bm-shield" transform="translate(55,80) scale(2.2)"/>
+        <use href="#bm-bag" transform="translate(310,60) scale(1.8)"/>
+        <use href="#bm-lock" transform="translate(160,200) scale(1.5)"/>
+        <use href="#bm-shield" transform="translate(350,280) scale(1.1)"/>
+        <use href="#bm-bag" transform="translate(40,340) scale(2.4)"/>
+        <use href="#bm-vpn-word" transform="translate(30,430) rotate(-12)"/>
+        <use href="#bm-lock" transform="translate(300,410) scale(2)"/>
+        <use href="#bm-shield" transform="translate(180,510) scale(1.4)"/>
+        <use href="#bm-bag" transform="translate(60,600) scale(1.2)"/>
+        <use href="#bm-vpn-word" transform="translate(220,650) rotate(-12)"/>
+        <use href="#bm-shield" transform="translate(340,700) scale(1.8)"/>
+        <use href="#bm-lock" transform="translate(100,780) scale(1.6)"/>
+        <use href="#bm-bag" transform="translate(270,830) scale(1.3)"/>
+        <use href="#bm-shield" transform="translate(30,870) scale(0.9)"/>
+      </g>
     </svg>
   </div>
-  <h1>Защищённый VPN<br>без лишнего шума</h1>
-  <p>Быстрый доступ. Без логов.<br>Работает везде — даже там, где всё заблокировано.</p>
-  <div class="status-row">
-    <span class="pill"><span class="pill-dot"></span>Серверы онлайн</span>
-    <span class="pill blue">WireGuard / VLESS</span>
+
+  <!-- CONNECTIONS mesh: globe + link + devices -->
+  <div class="mesh-layer" data-screen="connections">
+    <svg viewBox="0 0 400 900" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <g id="bm-globe">
+          <circle cx="0" cy="0" r="13" fill="none" stroke="#22d3ee" stroke-width="1.2"/>
+          <path d="M0 -13 C4 -7 4 7 0 13 C-4 7 -4 -7 0 -13Z" fill="none" stroke="#22d3ee" stroke-width="1"/>
+          <line x1="-13" y1="0" x2="13" y2="0" stroke="#22d3ee" stroke-width="1"/>
+          <path d="M-10 -6 Q0 -9 10 -6" fill="none" stroke="#22d3ee" stroke-width="0.9"/>
+          <path d="M-10 6 Q0 9 10 6" fill="none" stroke="#22d3ee" stroke-width="0.9"/>
+        </g>
+        <g id="bm-link-icon">
+          <path d="M-6 0 L-3 -3 C0 -6 5 -6 8 -3 L8 -3" fill="none" stroke="#7c3aed" stroke-width="1.3" stroke-linecap="round"/>
+          <path d="M6 0 L3 3 C0 6 -5 6 -8 3" fill="none" stroke="#7c3aed" stroke-width="1.3" stroke-linecap="round"/>
+          <line x1="-4" y1="-4" x2="4" y2="4" stroke="#7c3aed" stroke-width="1" opacity="0.5"/>
+        </g>
+        <g id="bm-device">
+          <rect x="-12" y="-8" width="20" height="14" rx="2" fill="none" stroke="#06b6d4" stroke-width="1.2"/>
+          <rect x="11" y="-5" width="6" height="11" rx="1.2" fill="none" stroke="#06b6d4" stroke-width="1"/>
+        </g>
+      </defs>
+      <g opacity="0.09">
+        <use href="#bm-globe" transform="translate(60,90) scale(2.4)"/>
+        <use href="#bm-link-icon" transform="translate(320,55) scale(2)"/>
+        <use href="#bm-device" transform="translate(180,175) scale(1.6)"/>
+        <use href="#bm-globe" transform="translate(345,310) scale(1.4)"/>
+        <use href="#bm-link-icon" transform="translate(50,350) scale(2.8)"/>
+        <use href="#bm-device" transform="translate(270,430) scale(1.8)"/>
+        <use href="#bm-globe" transform="translate(110,510) scale(1.2)"/>
+        <use href="#bm-link-icon" transform="translate(355,560) scale(1.5)"/>
+        <use href="#bm-device" transform="translate(60,640) scale(2.1)"/>
+        <use href="#bm-globe" transform="translate(280,700) scale(1.9)"/>
+        <use href="#bm-link-icon" transform="translate(155,770) scale(1.3)"/>
+        <use href="#bm-device" transform="translate(330,840) scale(1.4)"/>
+      </g>
+    </svg>
+  </div>
+
+  <!-- PRIME mesh: crown + star + gem -->
+  <div class="mesh-layer" data-screen="prime">
+    <svg viewBox="0 0 400 900" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <g id="bm-crown">
+          <path d="M-12 6 L-8 -4 L-1 2 L0 -10 L1 2 L8 -4 L12 6 L10 8 L-10 8 Z" fill="none" stroke="#f6c453" stroke-width="1.3" stroke-linejoin="round"/>
+          <circle cx="-8" cy="-5" r="1.4" fill="#f6c453"/>
+          <circle cx="0" cy="-11" r="1.4" fill="#f6c453"/>
+          <circle cx="8" cy="-5" r="1.4" fill="#f6c453"/>
+        </g>
+        <g id="bm-star-big">
+          <path d="M0 -12 L2.8 -4 L11 -4 L4.4 1 L7 9 L0 5 L-7 9 L-4.4 1 L-11 -4 L-2.8 -4 Z" fill="none" stroke="#fde68a" stroke-width="1.2"/>
+        </g>
+        <g id="bm-gem">
+          <path d="M-7 -3 L-3 -9 L3 -9 L7 -3 L0 8 Z" fill="none" stroke="#a855f7" stroke-width="1.2"/>
+          <path d="M-7 -3 L0 -3 L7 -3" fill="none" stroke="#a855f7" stroke-width="0.9"/>
+          <path d="M-3 -9 L0 -3 L3 -9" fill="none" stroke="#a855f7" stroke-width="0.9"/>
+        </g>
+      </defs>
+      <g opacity="0.09">
+        <use href="#bm-crown" transform="translate(60,85) scale(2.5)"/>
+        <use href="#bm-star-big" transform="translate(330,50) scale(1.8)"/>
+        <use href="#bm-gem" transform="translate(200,190) scale(2)"/>
+        <use href="#bm-crown" transform="translate(360,310) scale(1.3)"/>
+        <use href="#bm-star-big" transform="translate(45,370) scale(2.6)"/>
+        <use href="#bm-gem" transform="translate(260,450) scale(1.6)"/>
+        <use href="#bm-crown" transform="translate(110,530) scale(1.8)"/>
+        <use href="#bm-star-big" transform="translate(340,600) scale(2.1)"/>
+        <use href="#bm-gem" transform="translate(80,680) scale(1.4)"/>
+        <use href="#bm-crown" transform="translate(290,760) scale(2.2)"/>
+        <use href="#bm-star-big" transform="translate(160,840) scale(1.5)"/>
+        <use href="#bm-gem" transform="translate(350,870) scale(1.1)"/>
+      </g>
+    </svg>
+  </div>
+
+  <!-- PROFILE mesh: user + wallet + referral -->
+  <div class="mesh-layer" data-screen="profile">
+    <svg viewBox="0 0 400 900" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <g id="bm-user">
+          <circle cx="0" cy="-7" r="5.5" fill="none" stroke="#ec4899" stroke-width="1.2"/>
+          <path d="M-10 12 C-8 5 -5 2 0 2 C5 2 8 5 10 12" fill="none" stroke="#ec4899" stroke-width="1.2"/>
+        </g>
+        <g id="bm-wallet">
+          <rect x="-11" y="-7" width="22" height="14" rx="2.5" fill="none" stroke="#a855f7" stroke-width="1.2"/>
+          <rect x="5" y="-2" width="7" height="5" rx="1.5" fill="none" stroke="#a855f7" stroke-width="1"/>
+          <line x1="-11" y1="1" x2="4" y2="1" stroke="#a855f7" stroke-width="0.9"/>
+        </g>
+        <g id="bm-user-plus">
+          <circle cx="-3" cy="-6" r="4.5" fill="none" stroke="#f472b6" stroke-width="1.2"/>
+          <path d="M-12 10 C-10 4.5 -7 2 -3 2 C1 2 4 4.5 6 10" fill="none" stroke="#f472b6" stroke-width="1.2"/>
+          <line x1="11" y1="-3" x2="11" y2="5" stroke="#f472b6" stroke-width="1.4" stroke-linecap="round"/>
+          <line x1="7" y1="1" x2="15" y2="1" stroke="#f472b6" stroke-width="1.4" stroke-linecap="round"/>
+        </g>
+      </defs>
+      <g opacity="0.09">
+        <use href="#bm-user" transform="translate(65,85) scale(2.4)"/>
+        <use href="#bm-wallet" transform="translate(330,55) scale(1.9)"/>
+        <use href="#bm-user-plus" transform="translate(190,190) scale(1.7)"/>
+        <use href="#bm-user" transform="translate(355,310) scale(1.3)"/>
+        <use href="#bm-wallet" transform="translate(50,355) scale(2.6)"/>
+        <use href="#bm-user-plus" transform="translate(260,440) scale(1.5)"/>
+        <use href="#bm-user" transform="translate(120,520) scale(1.9)"/>
+        <use href="#bm-wallet" transform="translate(340,600) scale(1.7)"/>
+        <use href="#bm-user-plus" transform="translate(75,675) scale(2)"/>
+        <use href="#bm-user" transform="translate(285,760) scale(2.2)"/>
+        <use href="#bm-wallet" transform="translate(160,840) scale(1.4)"/>
+        <use href="#bm-user-plus" transform="translate(345,875) scale(1.2)"/>
+      </g>
+    </svg>
+  </div>
+
+</div>
+
+<div class="theme-glow" id="themeGlow">
+  <div class="theme-layer active" data-screen="shop"></div>
+  <div class="theme-layer" data-screen="connections"></div>
+  <div class="theme-layer" data-screen="prime"></div>
+  <div class="theme-layer" data-screen="profile"></div>
+</div>
+
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-bag" viewBox="0 0 24 24"><path d="M6 8h12l-1 12H7L6 8z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/></symbol>
+  <symbol id="i-crown" viewBox="0 0 24 24"><path d="M3 8l4 4 5-7 5 7 4-4-2 11H5L3 8z"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c1.5-4 4-6 7-6s5.5 2 7 6"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V19.5a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.04-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87A1.7 1.7 0 0 0 3.5 12.46H3.4a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.56-1.04 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9.5A1.7 1.7 0 0 0 10.54 1.5V1.4a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.04 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.09c.24.68.85 1.15 1.56 1.15h.1a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.56 1.04z"/></symbol>
+  <symbol id="i-wallet" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18"/><circle cx="16.5" cy="14.2" r="1.1"/></symbol>
+  <symbol id="i-user-plus" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.3"/><path d="M3 20c1.3-3.6 3.6-5.4 6-5.4s4.7 1.8 6 5.4"/><path d="M18 8v6M15 11h6"/></symbol>
+  <symbol id="i-receipt" viewBox="0 0 24 24"><path d="M6 3h12v18l-2.5-1.5L13 21l-2.5-1.5L8 21l-2-1.5V3z"/><path d="M9 8h6M9 12h6"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5C4 4.7 4.7 4 5.5 4H12v16H5.5c-.8 0-1.5-.7-1.5-1.5v-13z"/><path d="M20 5.5c0-.8-.7-1.5-1.5-1.5H12v16h6.5c.8 0 1.5-.7 1.5-1.5v-13z"/></symbol>
+  <symbol id="i-headset" viewBox="0 0 24 24"><path d="M4 13v-1a8 8 0 0 1 16 0v1"/><rect x="3" y="13" width="4" height="6" rx="1.5"/><rect x="17" y="13" width="4" height="6" rx="1.5"/><path d="M19 19v1a3 3 0 0 1-3 3h-3"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 5-3 8.5-7 9-4-.5-7-4-7-9V6l7-3z"/></symbol>
+  <symbol id="i-devices" viewBox="0 0 24 24"><rect x="2" y="4" width="14" height="10" rx="1.5"/><path d="M6 20h6"/><rect x="18" y="9" width="4" height="9" rx="1"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3z"/></symbol>
+  <symbol id="i-arrow-send" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 2l2.9 6.6 7.1.7-5.4 4.8 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.3l7.1-.7L12 2z"/></symbol>
+  <symbol id="i-gem" viewBox="0 0 24 24"><path d="M4.5 8.5L8 3h8l3.5 5.5L12 21 4.5 8.5z"/><path d="M4.5 8.5h15M8 3l-1.5 5.5L12 21M16 3l1.5 5.5L12 21"/></symbol>
+  <symbol id="i-gift" viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="4" rx="1"/><rect x="5" y="13" width="14" height="8" rx="1"/><path d="M12 9v12"/><path d="M12 9C9 9 7.5 7.5 7.5 6a2.5 2.5 0 0 1 5 0c0 .7-.2 1.4-.5 2M12 9c3 0 4.5-1.5 4.5-3a2.5 2.5 0 0 0-5 0c0 .7.2 1.4.5 2"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 2c.6 3.6 2 6.4 4.6 8.4C19.4 12.6 21.4 14 22 17c-3.6-.6-6.4-2-8.4-4.6C11.4 9.6 10 7.6 9.4 5 9 3.5 10 2.2 12 2z"/><path d="M12 22c-.6-3.6-2-6.4-4.6-8.4C4.6 11.4 2.6 10 2 7c3.6.6 6.4 2 8.4 4.6 1.2 1.8 2.6 3.8 3.2 6.4.4 1.5-.6 2.8-1.6 4z"/></symbol>
+  <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="7" r="3"/><path d="M3 21v-1a6 6 0 0 1 6-6h0a6 6 0 0 1 6 6v1"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M21 21v-1a4 4 0 0 0-3-3.85"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M18 20V10M12 20V4M6 20v-6"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8A6 6 0 1 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></symbol>
+  <symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M4.93 4.93l14.14 14.14"/></symbol>
+  <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><circle cx="7.5" cy="6.5" r="1"/><circle cx="7.5" cy="17.5" r="1"/></symbol>
+  <symbol id="i-tag" viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle cx="7" cy="7" r="1.5" fill="currentColor"/></symbol>
+  <symbol id="i-ab" viewBox="0 0 24 24"><text x="2" y="17" font-size="13" font-weight="900" font-family="Inter,sans-serif" fill="currentColor">AB</text></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 2v13M8 11l4 4 4-4"/><path d="M3 17v2a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2"/></symbol>
+</svg>
+
+<!-- ═══════ SHOP ═══════ -->
+<div class="screen active" id="screen-shop">
+
+  <div class="hero">
+    <div class="logo-mark">
+      <svg viewBox="0 0 76 76" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="logoRingGrad" x1="10%" y1="0%" x2="90%" y2="100%">
+            <stop offset="0%" stop-color="#c9a9ff"/>
+            <stop offset="55%" stop-color="#a855f7"/>
+            <stop offset="100%" stop-color="#6d28d9"/>
+          </linearGradient>
+          <linearGradient id="logoFlagGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#d8c1ff"/>
+            <stop offset="100%" stop-color="#8b5cf6"/>
+          </linearGradient>
+        </defs>
+        <circle class="logo-ring" cx="38" cy="38" r="30"/>
+        <circle class="logo-spark" cx="60" cy="14" r="2.4" fill="#f3e8ff"/>
+        <path d="M32 22 L44 15 L44 55 L34 55 L34 30 L27 34 Z" fill="url(#logoFlagGrad)"/>
+      </svg>
+    </div>
+    <h1>1ClickVPN</h1>
+    <p>Быстрый доступ. Без логов.<br>Работает везде — даже там, где всё заблокировано.</p>
+    <div class="status-row">
+      <span class="pill"><span class="pill-dot"></span>Серверы онлайн</span>
+      <span class="pill gold" onclick="sendToBot('/trial')"><svg class="icon" style="width:12px;height:12px;"><use href="#i-gift"/></svg>3 дня бесплатно</span>
+    </div>
+  </div>
+
+  <div class="section-label">Выбери тариф</div>
+  <div class="tariff-tabs" id="tariffTabs"></div>
+  <div class="card tariff-info" id="tariffInfo"></div>
+
+  <div class="section-label">Устройства</div>
+  <div class="selector-row" id="deviceChips"></div>
+
+  <div class="section-label">Период</div>
+  <div class="selector-row" id="periodChips"></div>
+
+  <div class="card price-summary">
+    <div>
+      <div class="price-summary-amount" id="priceAmount">129 ₽</div>
+      <div class="price-summary-per" id="pricePer">1 месяц · 1 устройство</div>
+    </div>
+    <div class="price-summary-devices" id="priceTariffLabel"><span class="price-badge tb-standard"><svg class="icon"><use href="#i-shield"/></svg></span>Standard</div>
+  </div>
+
+  <div class="section-row">
+    <div class="section-title">Локации</div>
+    <div class="section-note"><svg class="icon" style="width:11px;height:11px;color:var(--orange);display:inline;vertical-align:-1px;"><use href="#i-star"/></svg> — только на Premium/Ultimate</div>
+  </div>
+  <div class="regions-scroll" id="regionsScroll"></div>
+
+  <div class="features">
+    <div class="section-label" style="padding:0;margin-bottom:12px;">Почему мы</div>
+    <div class="features-grid">
+      <div class="feat"><svg class="icon feat-icon"><use href="#i-zap"/></svg><div class="feat-title">Высокая скорость</div><div class="feat-sub">До 250 Мбит/с на Ultimate</div></div>
+      <div class="feat"><svg class="icon feat-icon"><use href="#i-shield"/></svg><div class="feat-title">Без логов</div><div class="feat-sub">Никакой слежки за трафиком</div></div>
+      <div class="feat"><svg class="icon feat-icon"><use href="#i-globe"/></svg><div class="feat-title">20 стран</div><div class="feat-sub">Включая Premium-локации</div></div>
+      <div class="feat"><svg class="icon feat-icon"><use href="#i-devices"/></svg><div class="feat-title">До 4 устройств</div><div class="feat-sub">iOS, Android, Windows, Mac</div></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══════ CONNECTIONS ═══════ -->
+<div class="screen" id="screen-connections">
+  <div class="app-header">
+    <h1>Подключения</h1>
+    <div class="icon-btn" onclick="showScreen('shop')"><svg class="icon"><use href="#i-bag"/></svg></div>
+  </div>
+
+  <div class="section-label" style="margin-top:8px;">Активные устройства</div>
+  <div class="conn-list" id="connList"></div>
+
+  <div class="empty-state" id="connEmpty">
+    <div class="empty-icon"><svg class="icon" style="width:28px;height:28px;"><use href="#i-link"/></svg></div>
+    <div class="empty-title">Пока нет активных подключений</div>
+    <div class="empty-sub">Оформи подписку, чтобы получить конфиг для WireGuard, VLESS или Outline.</div>
+    <button class="empty-btn" onclick="showScreen('shop')">
+      <svg class="icon" style="width:16px;height:16px;"><use href="#i-bag"/></svg>
+      Купить подписку
+    </button>
+  </div>
+
+  <div class="quick-grid" style="margin-top:4px;">
+    <div class="quick-item" onclick="sendToBot('/howto')">
+      <div class="quick-icon ic-cyan"><svg class="icon" style="width:18px;height:18px;"><use href="#i-book"/></svg></div>
+      <div><div class="quick-title">Как подключиться</div><div class="quick-sub">Инструкция для всех платформ</div></div>
+    </div>
+    <div class="quick-item" onclick="sendToBot('/support')">
+      <div class="quick-icon ic-pink"><svg class="icon" style="width:18px;height:18px;"><use href="#i-headset"/></svg></div>
+      <div><div class="quick-title">Поддержка</div><div class="quick-sub">Чат с командой</div></div>
+    </div>
   </div>
 </div>
 
-<!-- ── PLANS ── -->
-<div class="section-label">Выбери тариф</div>
-<div class="plans" id="plans">
-
-  <div class="plan-card" data-plan="1m" data-price="149" onclick="selectPlan(this)">
-    <div class="plan-radio"><div class="plan-radio-dot"></div></div>
-    <div class="plan-name">1 месяц</div>
-    <div class="plan-desc">Попробовать без обязательств</div>
-    <div class="plan-price-row">
-      <span class="plan-price">149</span>
-      <span class="plan-currency">₽</span>
-      <span class="plan-per">/ мес</span>
-    </div>
+<!-- ═══════ PRIME ═══════ -->
+<div class="screen" id="screen-prime">
+  <div class="app-header">
+    <h1>Prime</h1>
+    <div class="icon-btn" onclick="showScreen('profile')"><svg class="icon"><use href="#i-user"/></svg></div>
   </div>
 
-  <div class="plan-card popular selected" data-plan="3m" data-price="349" onclick="selectPlan(this)">
-    <div class="plan-radio"><div class="plan-radio-dot"></div></div>
-    <span class="plan-badge badge-popular">Хит</span>
-    <div class="plan-name">3 месяца</div>
-    <div class="plan-desc">Самый популярный выбор</div>
-    <div class="plan-price-row">
-      <span class="plan-price">349</span>
-      <span class="plan-currency">₽</span>
-      <span class="plan-per">/ 3 мес</span>
-      <span class="plan-save">-22%</span>
+  <div class="prime-hero">
+    <svg class="prime-hero-deco icon"><use href="#i-crown"/></svg>
+    <span class="prime-badge">Не активна</span>
+    <div class="prime-hero-title">VPN <b>Prime</b></div>
+    <div class="prime-hero-sub">Готовый премиум-набор: Ultimate-тариф на 5 устройств одной кнопкой.</div>
+    <div class="prime-period-tabs">
+      <div class="prime-period-tab active" data-period="month" onclick="selectPrimePeriod(this,'month')">Месяц</div>
+      <div class="prime-period-tab" data-period="year" onclick="selectPrimePeriod(this,'year')">Год<span class="tab-save" id="primeYearSave">-77%</span></div>
     </div>
+    <div class="prime-price" id="primePrice">890 ₽<span>/месяц</span></div>
   </div>
 
-  <div class="plan-card" data-plan="6m" data-price="599" onclick="selectPlan(this)">
-    <div class="plan-radio"><div class="plan-radio-dot"></div></div>
-    <span class="plan-badge badge-best">Выгодно</span>
-    <div class="plan-name">6 месяцев</div>
-    <div class="plan-desc">Лучшая цена за месяц</div>
-    <div class="plan-price-row">
-      <span class="plan-price">599</span>
-      <span class="plan-currency">₽</span>
-      <span class="plan-per">/ 6 мес</span>
-      <span class="plan-save">-33%</span>
-    </div>
+  <div class="section-title">Преимущества Prime</div>
+  <div class="benefits">
+    <div class="benefit"><div class="benefit-check"><svg class="icon" style="width:14px;height:14px;"><use href="#i-check"/></svg></div><div class="benefit-text">Тариф Ultimate — 250 Мбит/с и двойное шифрование</div></div>
+    <div class="benefit"><div class="benefit-check"><svg class="icon" style="width:14px;height:14px;"><use href="#i-check"/></svg></div><div class="benefit-text">Доступ ко всем Premium-серверам</div></div>
+    <div class="benefit"><div class="benefit-check"><svg class="icon" style="width:14px;height:14px;"><use href="#i-check"/></svg></div><div class="benefit-text">До 5 устройств одновременно</div></div>
+    <div class="benefit"><div class="benefit-check"><svg class="icon" style="width:14px;height:14px;"><use href="#i-check"/></svg></div><div class="benefit-text">Блокировка рекламы и максимальный приоритет</div></div>
+    <div class="benefit"><div class="benefit-check"><svg class="icon" style="width:14px;height:14px;"><use href="#i-check"/></svg></div><div class="benefit-text">Поддержка 24/7 без очереди</div></div>
   </div>
 
-  <div class="plan-card" data-plan="12m" data-price="999" onclick="selectPlan(this)">
-    <div class="plan-radio"><div class="plan-radio-dot"></div></div>
-    <span class="plan-badge badge-best">Максимум</span>
-    <div class="plan-name">12 месяцев</div>
-    <div class="plan-desc">Для тех, кто ценит стабильность</div>
-    <div class="plan-price-row">
-      <span class="plan-price">999</span>
-      <span class="plan-currency">₽</span>
-      <span class="plan-per">/ год</span>
-      <span class="plan-save">-44%</span>
-    </div>
+  <div class="prime-actions">
+    <button class="btn-primary" onclick="handlePrimeBuy()">
+      <svg class="icon" style="width:16px;height:16px;"><use href="#i-crown"/></svg>
+      Купить Prime
+    </button>
+    <button class="btn-secondary" onclick="sendToBot('/trial')">Попробовать 3 дня бесплатно</button>
   </div>
-
+  <div class="prime-footnote">Отменить можно в любой момент. При оплате на год — существенная экономия по сравнению с помесячной оплатой.</div>
 </div>
 
-<div class="divider"></div>
+<!-- ═══════ PROFILE ═══════ -->
+<div class="screen" id="screen-profile">
+  <div class="app-header">
+    <h1>Профиль</h1>
+    <div class="icon-btn" onclick="sendToBot('/settings')"><svg class="icon"><use href="#i-settings"/></svg></div>
+  </div>
 
-<!-- ── PROTOCOL ── -->
-<div class="proto-section">
-  <div class="section-label" style="padding:0;margin-bottom:12px;">Протокол</div>
-  <div class="proto-tabs">
-    <div class="proto-tab active" onclick="selectProto(this,'wireguard')">WireGuard</div>
-    <div class="proto-tab" onclick="selectProto(this,'vless')">VLESS</div>
-    <div class="proto-tab" onclick="selectProto(this,'outline')">Outline</div>
+  <div class="container" style="margin-top:8px;">
+
+    <div class="card user-card">
+      <div class="avatar"><svg class="icon" style="width:22px;height:22px;color:white;"><use href="#i-user"/></svg></div>
+      <div class="user-meta">
+        <div class="user-name-row">
+          <span class="user-name" id="profileName">Гость</span>
+          <span class="tier-tag" id="profileTier">Free</span>
+        </div>
+        <div class="user-id" id="profileId">ID: —</div>
+      </div>
+    </div>
+
+    <div class="balance-card">
+      <svg class="balance-deco icon"><use href="#i-wallet"/></svg>
+      <div class="balance-label"><svg class="icon" style="width:14px;height:14px;"><use href="#i-wallet"/></svg>Текущий баланс</div>
+      <div class="balance-amount">0 ₽</div>
+      <div class="topup-chips" id="topupChips"></div>
+      <button class="balance-btn" onclick="sendToBot('/topup')">
+        <svg class="icon" style="width:16px;height:16px;"><use href="#i-arrow-send"/></svg>
+        Пополнить на свою сумму
+      </button>
+    </div>
+
+    <div class="card prime-teaser" onclick="showScreen('prime')">
+      <div class="prime-teaser-icon"><svg class="icon" style="width:20px;height:20px;"><use href="#i-crown"/></svg></div>
+      <div>
+        <div class="row-title">Получить Prime</div>
+        <div class="row-sub">Ultimate на 5 устройств — от 890 ₽/мес</div>
+      </div>
+      <div class="row-arrow"><svg class="icon" style="width:18px;height:18px;"><use href="#i-chevron"/></svg></div>
+    </div>
+
+  </div>
+
+  <div class="section-title">Реферальная программа</div>
+  <div class="container">
+    <div class="card">
+      <div class="row-title" style="margin-bottom:2px;">Приглашайте друзей</div>
+      <div class="row-sub">+3 дня подписки и 15% от пополнений друга на реф-баланс</div>
+      <div class="referral-code-box">
+        <span class="referral-code" id="referralCode">— — — — — — — —</span>
+        <button class="copy-btn" onclick="copyReferral()"><svg class="icon" style="width:16px;height:16px;"><use href="#i-copy"/></svg></button>
+      </div>
+      <div class="referral-stat">
+        <svg class="icon" style="width:15px;height:15px;"><use href="#i-user-plus"/></svg>
+        Приглашено пользователей: <b id="referralCount">0</b>
+      </div>
+      <div class="milestone-row">
+        <div class="milestone-chip"><b>+100 ₽</b><span>за 5 друзей</span></div>
+        <div class="milestone-chip"><b>+250 ₽</b><span>за 10 друзей</span></div>
+        <div class="milestone-chip"><b>+750 ₽</b><span>за 25 друзей</span></div>
+        <div class="milestone-chip"><b>+2000 ₽</b><span>за 50 друзей</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row-title" style="margin-bottom:2px;">Промокод</div>
+      <div class="row-sub">Активируйте промокод для скидки на подписку</div>
+      <div class="promo-row">
+        <input class="promo-input" id="promoInput" type="text" placeholder="Введите код…">
+        <button class="promo-submit" onclick="applyPromo()"><svg class="icon" style="width:18px;height:18px;"><use href="#i-arrow-send"/></svg></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title">Быстрые действия</div>
+  <div class="quick-grid">
+    <div class="quick-item" onclick="sendToBot('/balance')">
+      <div class="quick-icon ic-green"><svg class="icon" style="width:18px;height:18px;"><use href="#i-wallet"/></svg></div>
+      <div><div class="quick-title">Баланс</div><div class="quick-sub">Текущий баланс счёта</div></div>
+    </div>
+    <div class="quick-item" onclick="sendToBot('/invite')">
+      <div class="quick-icon ic-indigo"><svg class="icon" style="width:18px;height:18px;"><use href="#i-user-plus"/></svg></div>
+      <div><div class="quick-title">Пригласить друга</div><div class="quick-sub">Реферальная программа</div></div>
+    </div>
+    <div class="quick-item" onclick="sendToBot('/payments')">
+      <div class="quick-icon ic-cyan"><svg class="icon" style="width:18px;height:18px;"><use href="#i-receipt"/></svg></div>
+      <div><div class="quick-title">Мои платежи</div><div class="quick-sub">История транзакций</div></div>
+    </div>
+    <div class="quick-item" onclick="sendToBot('/pay_sbp')">
+      <div class="quick-icon ic-orange"><svg class="icon" style="width:18px;height:18px;"><use href="#i-zap"/></svg></div>
+      <div><div class="quick-title">Оплата СБП</div><div class="quick-sub">Быстрый платёж</div></div>
+    </div>
+    <div class="quick-item" onclick="sendToBot('/howto')">
+      <div class="quick-icon ic-cyan"><svg class="icon" style="width:18px;height:18px;"><use href="#i-book"/></svg></div>
+      <div><div class="quick-title">Как подключиться</div><div class="quick-sub">Инструкция по настройке</div></div>
+    </div>
+    <div class="quick-item" onclick="sendToBot('/support')">
+      <div class="quick-icon ic-pink"><svg class="icon" style="width:18px;height:18px;"><use href="#i-headset"/></svg></div>
+      <div><div class="quick-title">Поддержка</div><div class="quick-sub">Чат с командой</div></div>
+    </div>
+    <div class="quick-item" onclick="showScreen('shop')">
+      <div class="quick-icon ic-indigo"><svg class="icon" style="width:18px;height:18px;"><use href="#i-bag"/></svg></div>
+      <div><div class="quick-title">Купить подписку</div><div class="quick-sub">Тарифы и планы</div></div>
+    </div>
+    <div class="quick-item" onclick="showScreen('connections')">
+      <div class="quick-icon ic-green"><svg class="icon" style="width:18px;height:18px;"><use href="#i-devices"/></svg></div>
+      <div><div class="quick-title">Мои подключения</div><div class="quick-sub">Активные устройства</div></div>
+    </div>
   </div>
 </div>
 
-<!-- ── FEATURES ── -->
-<div class="features">
-  <div class="section-label" style="padding:0;margin-bottom:12px;">Что включено</div>
-  <div class="features-grid">
-    <div class="feat">
-      <div class="feat-icon">⚡</div>
-      <div class="feat-title">Высокая скорость</div>
-      <div class="feat-sub">До 1 Гбит/с на сервер</div>
+<!-- ═══════ ADMIN ═══════ -->
+<div class="screen" id="screen-admin">
+  <div class="app-header">
+    <h1>Админка</h1>
+    <span class="admin-header-badge">
+      <svg class="icon" style="width:12px;height:12px;"><use href="#i-wrench"/></svg>
+      ADMIN
+    </span>
+  </div>
+
+  <div class="admin-stat-grid">
+    <div class="admin-stat">
+      <div class="admin-stat-value" style="color:var(--accent2);" id="aStatUsers">—</div>
+      <div class="admin-stat-label">Пользователей</div>
+      <div class="admin-stat-delta" id="aStatUsersD"></div>
     </div>
-    <div class="feat">
-      <div class="feat-icon">🔒</div>
-      <div class="feat-title">Без логов</div>
-      <div class="feat-sub">Никакой слежки за трафиком</div>
+    <div class="admin-stat">
+      <div class="admin-stat-value" style="color:var(--green);" id="aStatRevenue">—</div>
+      <div class="admin-stat-label">Доход за 30д, ₽</div>
+      <div class="admin-stat-delta" id="aStatRevenueD"></div>
     </div>
-    <div class="feat">
-      <div class="feat-icon">🌍</div>
-      <div class="feat-title">Любые страны</div>
-      <div class="feat-sub">RU, NL, DE, US и другие</div>
+    <div class="admin-stat">
+      <div class="admin-stat-value" style="color:var(--cyan);" id="aStatActive">—</div>
+      <div class="admin-stat-label">Активных</div>
+      <div class="admin-stat-delta" id="aStatActiveD"></div>
     </div>
-    <div class="feat">
-      <div class="feat-icon">📱</div>
-      <div class="feat-title">Все устройства</div>
-      <div class="feat-sub">iOS, Android, Windows, Mac</div>
+    <div class="admin-stat">
+      <div class="admin-stat-value" style="color:var(--gold);" id="aStatStock">—</div>
+      <div class="admin-stat-label">Серверов в наличии</div>
+      <div class="admin-stat-delta" id="aStatStockD"></div>
     </div>
   </div>
+
+  <div class="admin-section">Управление</div>
+  <div class="admin-action-grid">
+    <div class="admin-action" onclick="sendToBot('/admin_users')">
+      <div class="admin-action-icon ic-violet"><svg class="icon" style="width:18px;height:18px;"><use href="#i-users"/></svg></div>
+      <div><div class="admin-action-title">Пользователи</div><div class="admin-action-sub">Поиск, баланс, бан</div></div>
+    </div>
+    <div class="admin-action" onclick="sendToBot('/admin_stats')">
+      <div class="admin-action-icon ic-cyan"><svg class="icon" style="width:18px;height:18px;"><use href="#i-chart"/></svg></div>
+      <div><div class="admin-action-title">Статистика</div><div class="admin-action-sub">Продажи и воронка</div></div>
+    </div>
+    <div class="admin-action" onclick="sendToBot('/admin_servers')">
+      <div class="admin-action-icon ic-green"><svg class="icon" style="width:18px;height:18px;"><use href="#i-server"/></svg></div>
+      <div><div class="admin-action-title">Серверы</div><div class="admin-action-sub">Склад и регионы</div></div>
+    </div>
+    <div class="admin-action" onclick="sendToBot('/admin_prices')">
+      <div class="admin-action-icon ic-gold"><svg class="icon" style="width:18px;height:18px;"><use href="#i-tag"/></svg></div>
+      <div><div class="admin-action-title">Цены</div><div class="admin-action-sub">Тарифы и скидки</div></div>
+    </div>
+    <div class="admin-action" onclick="sendToBot('/admin_promo')">
+      <div class="admin-action-icon ic-orange"><svg class="icon" style="width:18px;height:18px;"><use href="#i-gift"/></svg></div>
+      <div><div class="admin-action-title">Промокоды</div><div class="admin-action-sub">Создание и управление</div></div>
+    </div>
+    <div class="admin-action" onclick="sendToBot('/admin_broadcast')">
+      <div class="admin-action-icon ic-pink"><svg class="icon" style="width:18px;height:18px;"><use href="#i-bell"/></svg></div>
+      <div><div class="admin-action-title">Рассылка</div><div class="admin-action-sub">Сообщение всем</div></div>
+    </div>
+    <div class="admin-action" onclick="sendToBot('/admin_ban')">
+      <div class="admin-action-icon ic-red"><svg class="icon" style="width:18px;height:18px;"><use href="#i-ban"/></svg></div>
+      <div><div class="admin-action-title">Бан / Разбан</div><div class="admin-action-sub">Блокировка юзеров</div></div>
+    </div>
+    <div class="admin-action" onclick="sendToBot('/admin_ab')">
+      <div class="admin-action-icon ic-violet"><svg class="icon" style="width:18px;height:18px;"><use href="#i-chart"/></svg></div>
+      <div><div class="admin-action-title">A/B тесты</div><div class="admin-action-sub">Анализ конверсии</div></div>
+    </div>
+  </div>
+
+  <div class="admin-section">Система</div>
+  <div class="container" style="padding:0 16px;">
+    <div class="admin-action" onclick="sendToBot('/admin_backup')">
+      <div class="admin-action-icon ic-cyan"><svg class="icon" style="width:18px;height:18px;"><use href="#i-download"/></svg></div>
+      <div><div class="admin-action-title">Бэкап базы</div><div class="admin-action-sub">Скачать резервную копию</div></div>
+    </div>
+    <div class="admin-action" onclick="sendToBot('/admin_restock')">
+      <div class="admin-action-icon ic-green"><svg class="icon" style="width:18px;height:18px;"><use href="#i-zap"/></svg></div>
+      <div><div class="admin-action-title">Заявки на закупку</div><div class="admin-action-sub">Открытые заявки склада</div></div>
+    </div>
+  </div>
+  <div style="height:24px;"></div>
 </div>
 
-<!-- ── PAY BAR ── -->
-<div class="pay-bar">
+<!-- ═══════ PAY BAR ═══════ -->
+<div class="pay-bar show" id="payBar">
   <button class="pay-btn" id="payBtn" onclick="handlePay()">
     <span>Оплатить через СБП</span>
-    <span class="pay-amount" id="payAmount">349 ₽</span>
+    <span class="pay-amount" id="payAmount">129 ₽</span>
   </button>
 </div>
 
-<!-- ── LOADING ── -->
+<!-- ═══════ BOTTOM NAV ═══════ -->
+<nav class="bottom-nav">
+  <div class="nav-item active" data-screen="shop" onclick="showScreen('shop')"><svg class="icon"><use href="#i-bag"/></svg><span>Магазин</span></div>
+  <div class="nav-item" data-screen="connections" onclick="showScreen('connections')"><svg class="icon"><use href="#i-link"/></svg><span>Подключения</span></div>
+  <div class="nav-item" data-screen="prime" onclick="showScreen('prime')"><svg class="icon"><use href="#i-crown"/></svg><span>Prime</span></div>
+  <div class="nav-item" data-screen="profile" onclick="showScreen('profile')"><svg class="icon"><use href="#i-user"/></svg><span>Профиль</span></div>
+  <div class="nav-item admin-nav" data-screen="admin" id="adminNavItem" onclick="showScreen('admin')" style="display:none;">
+    <div class="admin-nav-dot"></div>
+    <svg class="icon"><use href="#i-wrench"/></svg>
+    <span>Админ</span>
+  </div>
+</nav>
+
 <div class="loading-overlay" id="loadingOverlay">
   <div class="spinner"></div>
   <div class="loading-text">Создаём ссылку на оплату…</div>
 </div>
 
-<!-- ── SUCCESS ── -->
 <div class="success-overlay" id="successOverlay">
-  <div class="success-icon">✓</div>
+  <div class="success-icon"><svg class="icon" style="width:36px;height:36px;color:#22c55e;"><use href="#i-check"/></svg></div>
   <div class="success-title">Оплата прошла!</div>
   <div class="success-sub">Конфигурация уже отправлена тебе в бот. Просто вернись в Telegram.</div>
 </div>
 
+<div class="toast" id="toast"></div>
+
+<!-- ═══════ ONBOARDING v2 (первый запуск) ═══════ -->
+<div class="onboard" id="onboard">
+  <div class="onboard-ambient" id="onboardAmbient"></div>
+
+  <!-- ambient floating icons background -->
+  <div class="onboard-ambient-mesh" id="onboardMesh">
+    <svg viewBox="0 0 390 750" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" id="onboardMeshSvg" style="opacity:0;transition:opacity .6s">
+      <defs>
+        <g id="om-shield"><path d="M0 -11 L8.5 -7.5 L8.5 -1.5 C8.5 4.5 4 8.5 0 10 C-4 8.5 -8.5 4.5 -8.5 -1.5 L-8.5 -7.5 Z" fill="none" stroke="currentColor" stroke-width="1.1"/></g>
+        <g id="om-lock"><rect x="-6" y="-3" width="12" height="9" rx="2" fill="none" stroke="currentColor" stroke-width="1"/><path d="M-3.5 -3 L-3.5 -5.5 C-3.5 -8.5 3.5 -8.5 3.5 -5.5 L3.5 -3" fill="none" stroke="currentColor" stroke-width="1"/><circle cx="0" cy="1.5" r="1.2" fill="currentColor" opacity="0.6"/></g>
+        <g id="om-globe"><circle cx="0" cy="0" r="10" fill="none" stroke="currentColor" stroke-width="1"/><line x1="-10" y1="0" x2="10" y2="0" stroke="currentColor" stroke-width="0.8"/><path d="M0 -10 C3 -5 3 5 0 10" fill="none" stroke="currentColor" stroke-width="0.8"/><path d="M0 -10 C-3 -5 -3 5 0 10" fill="none" stroke="currentColor" stroke-width="0.8"/></g>
+        <g id="om-crown"><path d="M-9 4.5 L-6 -3 L0 1 L6 -3 L9 4.5 L8 6 L-8 6 Z" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/><circle cx="-5.5" cy="-3.5" r="1.1" fill="currentColor"/><circle cx="0" cy="-8" r="1.1" fill="currentColor"/><circle cx="5.5" cy="-3.5" r="1.1" fill="currentColor"/></g>
+      </defs>
+      <g id="onbMeshIcons" opacity="0.08"></g>
+    </svg>
+  </div>
+
+  <!-- top bar -->
+  <div class="onboard-topbar">
+    <div class="onboard-progress" id="onboardProgress"></div>
+    <div class="onboard-skip" onclick="onbFinish()">Пропустить</div>
+  </div>
+
+  <div class="onboard-slides" id="onboardSlides">
+
+    <!-- Слайд 0: Welcome -->
+    <div class="onboard-slide active onb-violet" data-i="0">
+      <!-- big centered logo + orbiting elements -->
+      <div style="position:relative;width:160px;height:160px;margin:0 auto 28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <!-- glow -->
+        <div style="position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle,rgba(168,85,247,0.35),transparent 70%);"></div>
+        <!-- outer ring spinning -->
+        <div style="position:absolute;inset:10px;border-radius:50%;border:1px solid rgba(168,85,247,0.18);animation:onbSpin 10s linear infinite;"></div>
+        <!-- dots on ring -->
+        <div style="position:absolute;inset:10px;border-radius:50%;animation:onbSpin 10s linear infinite;">
+          <div style="position:absolute;top:-4px;left:50%;transform:translateX(-50%);width:8px;height:8px;border-radius:50%;background:#c9a9ff;box-shadow:0 0 8px #a855f7;"></div>
+          <div style="position:absolute;bottom:-4px;left:50%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%;background:#7c3aed;"></div>
+        </div>
+        <!-- mid ring -->
+        <div style="position:absolute;inset:26px;border-radius:50%;border:1px dashed rgba(168,85,247,0.12);animation:onbSpin 7s linear infinite reverse;"></div>
+        <!-- center icon -->
+        <div style="position:relative;width:80px;height:80px;border-radius:24px;background:linear-gradient(150deg,#1c1330,#130e1e);border:1px solid rgba(168,85,247,0.55);box-shadow:0 0 48px -8px rgba(168,85,247,0.6);display:flex;align-items:center;justify-content:center;">
+          <svg style="width:36px;height:36px;stroke:#c9a9ff;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;"><use href="#i-shield"/></svg>
+        </div>
+      </div>
+      <div class="onboard-eyebrow">1ClickVPN</div>
+      <div class="onboard-title">Приватность<br>в один клик</div>
+      <div class="onboard-desc">Надёжное соединение без логов. Работает везде — даже там, где всё заблокировано.</div>
+      <div class="onboard-chips">
+        <span class="onboard-chip"><svg class="icon"><use href="#i-shield"/></svg>Без логов</span>
+        <span class="onboard-chip"><svg class="icon"><use href="#i-zap"/></svg>До 250 Мбит/с</span>
+        <span class="onboard-chip"><svg class="icon"><use href="#i-globe"/></svg>20 стран</span>
+      </div>
+    </div>
+
+    <!-- Слайд 1: Магазин -->
+    <div class="onboard-slide onb-cyan" data-i="1">
+      <!-- nav preview with Shop highlighted -->
+      <div class="onb-nav-preview" style="margin-bottom:14px;flex-shrink:0;">
+        <div class="onb-screen-preview" style="background:rgba(13,10,22,0.75);">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+            <div style="width:32px;height:32px;border-radius:10px;background:rgba(34,211,238,0.12);display:flex;align-items:center;justify-content:center;"><svg style="width:16px;height:16px;stroke:#22d3ee;fill:none;stroke-width:1.8;stroke-linecap:round;"><use href="#i-bag"/></svg></div>
+            <div style="flex:1;">
+              <div style="height:8px;border-radius:100px;background:rgba(255,255,255,0.12);width:70%;margin-bottom:5px;"></div>
+              <div style="height:6px;border-radius:100px;background:rgba(255,255,255,0.06);width:45%;"></div>
+            </div>
+          </div>
+          <!-- tariff cards row -->
+          <div style="display:flex;gap:6px;">
+            <div style="flex:1;height:52px;border-radius:9px;background:rgba(34,211,238,0.07);border:1.5px solid rgba(34,211,238,0.3);display:flex;align-items:center;justify-content:center;"><div style="font-size:9px;font-weight:800;font-family:var(--mono);color:#67e8f9;">STD</div></div>
+            <div style="flex:1;height:52px;border-radius:9px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);display:flex;align-items:center;justify-content:center;"><div style="font-size:9px;font-weight:800;font-family:var(--mono);color:rgba(255,255,255,0.25);">PRM</div></div>
+            <div style="flex:1;height:52px;border-radius:9px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);display:flex;align-items:center;justify-content:center;"><div style="font-size:9px;font-weight:800;font-family:var(--mono);color:rgba(255,255,255,0.25);">ULT</div></div>
+          </div>
+          <!-- price row -->
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:2px;">
+            <div style="font-size:18px;font-weight:900;font-family:var(--mono);color:#22d3ee;">129 ₽</div>
+            <div style="font-size:9px;font-family:var(--mono);color:rgba(255,255,255,0.25);">1 мес · 1 устр.</div>
+          </div>
+        </div>
+        <div class="onb-nav-mock">
+          <div class="onb-nav-item lit-cyan">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h12l-1 12H7L6 8z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>
+            <span>Магазин</span>
+          </div>
+          <div class="onb-nav-item dim">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/></svg>
+            <span>Подключения</span>
+          </div>
+          <div class="onb-nav-item dim">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l4 4 5-7 5 7 4-4-2 11H5L3 8z"/></svg>
+            <span>Prime</span>
+          </div>
+          <div class="onb-nav-item dim">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c1.5-4 4-6 7-6s5.5 2 7 6"/></svg>
+            <span>Профиль</span>
+          </div>
+        </div>
+      </div>
+      <div class="onboard-eyebrow">Шаг 1 · Магазин</div>
+      <div class="onboard-title">Выбери тариф<br>под себя</div>
+      <div class="onboard-desc">Standard, Premium или Ultimate. Настрой число устройств и период — оплата через СБП за секунды.</div>
+      <div class="onboard-chips">
+        <span class="onboard-chip"><svg class="icon"><use href="#i-shield"/></svg>Standard</span>
+        <span class="onboard-chip"><svg class="icon"><use href="#i-gem"/></svg>Premium</span>
+        <span class="onboard-chip"><svg class="icon"><use href="#i-spark"/></svg>Ultimate</span>
+      </div>
+    </div>
+
+    <!-- Слайд 2: Подключения -->
+    <div class="onboard-slide onb-gold" data-i="2">
+      <div class="onb-nav-preview" style="margin-bottom:14px;flex-shrink:0;">
+        <div class="onb-screen-preview">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+            <div style="width:36px;height:36px;border-radius:10px;background:rgba(34,197,94,0.12);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><svg style="width:17px;height:17px;stroke:#22c55e;fill:none;stroke-width:1.8;stroke-linecap:round;"><use href="#i-link"/></svg></div>
+            <div style="flex:1;">
+              <div style="height:8px;border-radius:100px;background:rgba(255,255,255,0.11);width:65%;margin-bottom:5px;"></div>
+              <div style="height:6px;border-radius:100px;background:rgba(34,197,94,0.2);width:40%;"></div>
+            </div>
+            <div style="font-size:9px;font-weight:700;font-family:var(--mono);color:#22c55e;background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.25);padding:3px 8px;border-radius:100px;">ACTIVE</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div style="width:36px;height:36px;border-radius:10px;background:rgba(148,163,184,0.08);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><svg style="width:17px;height:17px;stroke:rgba(255,255,255,0.3);fill:none;stroke-width:1.8;stroke-linecap:round;"><use href="#i-devices"/></svg></div>
+            <div style="flex:1;">
+              <div style="height:8px;border-radius:100px;background:rgba(255,255,255,0.07);width:50%;margin-bottom:5px;"></div>
+              <div style="height:6px;border-radius:100px;background:rgba(255,255,255,0.04);width:35%;"></div>
+            </div>
+            <div style="font-size:9px;font-weight:700;font-family:var(--mono);color:rgba(255,255,255,0.25);background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);padding:3px 8px;border-radius:100px;">EXPD</div>
+          </div>
+          <!-- flags strip -->
+          <div style="display:flex;gap:5px;margin-top:10px;flex-wrap:wrap;">
+            <div style="font-size:14px;">🇩🇪</div><div style="font-size:14px;">🇳🇱</div><div style="font-size:14px;">🇬🇧</div><div style="font-size:14px;">🇺🇸</div><div style="font-size:14px;">🇫🇮</div>
+            <div style="font-size:9px;font-weight:700;font-family:var(--mono);color:rgba(255,255,255,0.2);align-self:center;">+15</div>
+          </div>
+        </div>
+        <div class="onb-nav-mock">
+          <div class="onb-nav-item dim">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h12l-1 12H7L6 8z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>
+            <span>Магазин</span>
+          </div>
+          <div class="onb-nav-item lit-gold">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/></svg>
+            <span>Подключения</span>
+          </div>
+          <div class="onb-nav-item dim">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l4 4 5-7 5 7 4-4-2 11H5L3 8z"/></svg>
+            <span>Prime</span>
+          </div>
+          <div class="onb-nav-item dim">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c1.5-4 4-6 7-6s5.5 2 7 6"/></svg>
+            <span>Профиль</span>
+          </div>
+        </div>
+      </div>
+      <div class="onboard-eyebrow">Шаг 2 · Подключения</div>
+      <div class="onboard-title">Конфиг прямо<br>в Telegram</div>
+      <div class="onboard-desc">После оплаты бот пришлёт конфиг для WireGuard или VLESS — просто отсканируй QR или импортируй файл.</div>
+      <div class="onboard-chips">
+        <span class="onboard-chip"><svg class="icon"><use href="#i-globe"/></svg>20 стран</span>
+        <span class="onboard-chip"><svg class="icon"><use href="#i-link"/></svg>WireGuard · VLESS</span>
+      </div>
+    </div>
+
+    <!-- Слайд 3: Prime + Профиль -->
+    <div class="onboard-slide onb-pink" data-i="3">
+      <div class="onb-nav-preview" style="margin-bottom:14px;flex-shrink:0;">
+        <div class="onb-screen-preview">
+          <!-- prime hero mini -->
+          <div style="background:linear-gradient(135deg,rgba(246,196,83,0.12),rgba(124,58,237,0.12));border-radius:10px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:8px;">
+            <svg style="width:18px;height:18px;stroke:#f6c453;fill:none;stroke-width:1.8;flex-shrink:0;"><use href="#i-crown"/></svg>
+            <div>
+              <div style="font-size:11px;font-weight:800;color:#fde68a;">VPN Prime</div>
+              <div style="font-size:9px;color:rgba(255,255,255,0.3);margin-top:1px;font-family:var(--mono);">Ultimate · 5 устройств</div>
+            </div>
+            <div style="margin-left:auto;font-size:12px;font-weight:900;font-family:var(--mono);color:#f6c453;">890₽</div>
+          </div>
+          <!-- referral mini -->
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div style="width:30px;height:30px;border-radius:8px;background:rgba(236,72,153,0.12);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><svg style="width:14px;height:14px;stroke:#f472b6;fill:none;stroke-width:1.8;stroke-linecap:round;"><use href="#i-user-plus"/></svg></div>
+            <div style="flex:1;">
+              <div style="height:7px;border-radius:100px;background:rgba(255,255,255,0.1);width:55%;margin-bottom:4px;"></div>
+              <div style="height:5px;border-radius:100px;background:rgba(255,255,255,0.05);width:40%;"></div>
+            </div>
+            <div style="font-size:9px;font-weight:700;color:#f472b6;font-family:var(--mono);">+3 дня</div>
+          </div>
+        </div>
+        <div class="onb-nav-mock">
+          <div class="onb-nav-item dim">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h12l-1 12H7L6 8z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>
+            <span>Магазин</span>
+          </div>
+          <div class="onb-nav-item dim">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/></svg>
+            <span>Подключения</span>
+          </div>
+          <div class="onb-nav-item lit-gold" style="color:#f6c453;background:rgba(246,196,83,0.1);">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l4 4 5-7 5 7 4-4-2 11H5L3 8z"/></svg>
+            <span>Prime</span>
+          </div>
+          <div class="onb-nav-item lit-pink">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c1.5-4 4-6 7-6s5.5 2 7 6"/></svg>
+            <span>Профиль</span>
+          </div>
+        </div>
+      </div>
+      <div class="onboard-eyebrow">Prime · Профиль</div>
+      <div class="onboard-title">Максимум<br>возможностей</div>
+      <div class="onboard-desc">Prime — Ultimate на 5 устройств одной кнопкой. Приглашай друзей и получай бонусы прямо на баланс.</div>
+      <div class="onboard-chips">
+        <span class="onboard-chip"><svg class="icon"><use href="#i-crown"/></svg>5 устройств</span>
+        <span class="onboard-chip"><svg class="icon"><use href="#i-user-plus"/></svg>+3 дня за друга</span>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="onboard-bottom">
+    <div class="onboard-dots" id="onboardDots"></div>
+    <button class="onboard-next" id="onboardNextBtn" onclick="onbNext()">
+      <span id="onboardNextLabel">Далее</span>
+      <svg class="icon" style="width:17px;height:17px;"><use href="#i-chevron"/></svg>
+    </button>
+  </div>
+</div>
+
 <script>
+// ══════════════════════ CONFIG (зеркало config.py) ══════════════════════
+const CONFIG = {
+  trialDays: 3,
+  refRewardDays: 3,
+  refPercent: 15,
+  topupPresets: [100, 300, 500, 1000],
+  primeDevices: 5,
+  primePrices: { month: 890, year: 2490 },
+  plans: {
+    standard: {
+      title: 'Standard', icon: 'shield', tone: 'standard', speed: '100 Мбит/с', premiumAccess: false,
+      features: ['Стандартное шифрование', 'Без доступа к Premium-серверам', 'Базовая поддержка'],
+      prices: {
+        1: { month: 129, '3month': 299, '6month': 449, year: 599 },
+        2: { month: 199, '3month': 499, '6month': 699, year: 899 },
+        4: { month: 299, '3month': 799, '6month': 1099, year: 1299 },
+      }
+    },
+    premium: {
+      title: 'Premium', icon: 'gem', tone: 'premium', speed: '200 Мбит/с', premiumAccess: true,
+      features: ['Доступ к Premium-серверам', 'Блокировка рекламы', 'Приоритетная поддержка'],
+      prices: {
+        1: { month: 199, '3month': 499, '6month': 799, year: 999 },
+        2: { month: 279, '3month': 699, '6month': 1099, year: 1399 },
+        4: { month: 399, '3month': 699, '6month': 999, year: 1590 },
+      }
+    },
+    ultimate: {
+      title: 'Ultimate', icon: 'spark', tone: 'ultimate', speed: '250 Мбит/с', premiumAccess: true,
+      features: ['Доступ к Premium-серверам', 'Блокировка рекламы', 'Двойное шифрование', 'Максимальный приоритет'],
+      prices: {
+        1: { month: 249, '3month': 649, '6month': 999, year: 1199 },
+        2: { month: 379, '3month': 999, '6month': 1499, year: 1799 },
+        4: { month: 649, '3month': 990, '6month': 1290, year: 1690 },
+      }
+    }
+  },
+  periods: [
+    ['month', '1 мес', 1],
+    ['3month', '3 мес', 3],
+    ['6month', '6 мес', 6],
+    ['year', '1 год', 12],
+  ],
+  periodTitle: { month: '1 месяц', '3month': '3 месяца', '6month': '6 месяцев', year: '1 год' },
+  regions: [
+    ['Нидерланды', false], ['Великобритания', false], ['Германия', false], ['Швейцария', false], ['Польша', false],
+    ['Латвия', false], ['Норвегия', false], ['США', false], ['Финляндия', false], ['Эстония', false],
+    ['Франция', true], ['Австрия', true], ['Хорватия', true], ['Турция', true], ['Россия', true],
+    ['Южная Корея', true], ['Болгария', true], ['Словения', true], ['Австралия', true], ['Швеция', true],
+  ],
+};
+
 // ── Telegram Web App init ──
 const tg = window.Telegram?.WebApp;
-if (tg) {
-  tg.ready();
-  tg.expand();
-  tg.setHeaderColor('#0a0a0f');
-  tg.setBackgroundColor('#0a0a0f');
+if (tg) { tg.ready(); tg.expand(); tg.setHeaderColor('#050307'); tg.setBackgroundColor('#050307'); }
+
+(function initProfile() {
+  const u = tg?.initDataUnsafe?.user;
+  const nameEl = document.getElementById('profileName');
+  const idEl = document.getElementById('profileId');
+  const refEl = document.getElementById('referralCode');
+  if (u) {
+    nameEl.textContent = u.username ? '@' + u.username : [u.first_name, u.last_name].filter(Boolean).join(' ') || 'Пользователь';
+    idEl.textContent = 'ID: ' + u.id;
+    refEl.textContent = String(u.id);
+  } else {
+    idEl.textContent = 'ID: —';
+  }
+})();
+
+// ══════════════════════ SHOP: tariff / devices / period selectors ══════════════════════
+let selTariff = 'standard';
+let selDevices = 1;
+let selPeriod = 'month';
+
+function renderTariffTabs() {
+  const wrap = document.getElementById('tariffTabs');
+  wrap.innerHTML = Object.entries(CONFIG.plans).map(([key, p]) => `
+    <div class="tariff-tab ${key === selTariff ? 'active' : ''}" onclick="selectTariff('${key}')">
+      ${p.premiumAccess ? '<svg class="icon prem-star" style="width:13px;height:13px;"><use href="#i-star"/></svg>' : ''}
+      <div class="tariff-badge tb-${p.tone}"><svg class="icon"><use href="#i-${p.icon}"/></svg></div>
+      <div class="tariff-name">${p.title}</div>
+    </div>`).join('');
 }
 
-// ── State ──
-let selectedPlan  = '3m';
-let selectedPrice = 349;
-let selectedProto = 'wireguard';
+function renderTariffInfo() {
+  const p = CONFIG.plans[selTariff];
+  const tones = {
+    standard: 'radial-gradient(120% 100% at 100% 0%, rgba(139,92,246,0.16), transparent 55%), linear-gradient(165deg, #150f22, #110c1c)',
+    premium:  'radial-gradient(120% 100% at 100% 0%, rgba(236,72,153,0.16), transparent 55%), linear-gradient(165deg, #1c0f1f, #150c1c)',
+    ultimate: 'radial-gradient(120% 100% at 100% 0%, rgba(246,196,83,0.14), transparent 55%), linear-gradient(165deg, #1c1710, #150f22)',
+  };
+  document.getElementById('tariffInfo').style.background = tones[p.tone];
+  document.getElementById('tariffInfo').innerHTML = `
+    <div class="tariff-info-bg tb-${p.tone}"><svg class="icon"><use href="#i-${p.icon}"/></svg></div>
+    <div class="tariff-info-top">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div class="tariff-info-badge tb-${p.tone}"><svg class="icon"><use href="#i-${p.icon}"/></svg></div>
+        <div class="tariff-info-title">${p.title}</div>
+      </div>
+      <div class="tariff-speed">${p.speed}</div>
+    </div>
+    <div class="tariff-feat-list">
+      ${p.features.map(f => `<div class="tariff-feat"><svg class="icon"><use href="#i-check"/></svg>${f}</div>`).join('')}
+    </div>`;
+}
 
-// ── Select plan ──
-function selectPlan(el) {
-  document.querySelectorAll('.plan-card').forEach(c => c.classList.remove('selected'));
-  el.classList.add('selected');
-  selectedPlan  = el.dataset.plan;
-  selectedPrice = parseInt(el.dataset.price);
-  document.getElementById('payAmount').textContent = selectedPrice + ' ₽';
+function renderDeviceChips() {
+  const wrap = document.getElementById('deviceChips');
+  const opts = [1, 2, 4];
+  wrap.innerHTML = opts.map(d => `
+    <div class="chip ${d === selDevices ? 'active' : ''}" onclick="selectDevices(${d})">
+      <div class="chip-title">${d} устр.</div>
+    </div>`).join('');
+}
+
+function renderPeriodChips() {
+  const wrap = document.getElementById('periodChips');
+  const prices = CONFIG.plans[selTariff].prices[selDevices];
+  const monthly = prices.month;
+  wrap.innerHTML = CONFIG.periods.map(([key, label, months]) => {
+    const price = prices[key];
+    let save = 0;
+    if (months > 1) save = Math.round((1 - price / (monthly * months)) * 100);
+    return `
+      <div class="chip ${key === selPeriod ? 'active' : ''}" onclick="selectPeriod('${key}')">
+        ${save > 0 ? `<span class="chip-save">-${save}%</span>` : ''}
+        <div class="chip-title">${label}</div>
+        <div class="chip-sub">${price} ₽</div>
+      </div>`;
+  }).join('');
+}
+
+function renderPriceSummary() {
+  const p = CONFIG.plans[selTariff];
+  const price = p.prices[selDevices][selPeriod];
+  document.getElementById('priceAmount').textContent = price + ' ₽';
+  document.getElementById('pricePer').textContent = `${CONFIG.periodTitle[selPeriod]} · ${selDevices} устр.`;
+  document.getElementById('priceTariffLabel').innerHTML = `<span class="price-badge tb-${p.tone}"><svg class="icon"><use href="#i-${p.icon}"/></svg></span>${p.title}`;
+  document.getElementById('payAmount').textContent = price + ' ₽';
+}
+
+function renderRegions() {
+  const wrap = document.getElementById('regionsScroll');
+  wrap.innerHTML = CONFIG.regions.map(([name, premium]) => `
+    <div class="region-chip">${premium ? '<svg class="icon"><use href="#i-star"/></svg>' : ''}${name}</div>`).join('');
+}
+
+function selectTariff(key) { selTariff = key; renderTariffTabs(); renderTariffInfo(); renderPeriodChips(); renderPriceSummary(); if (tg) tg.HapticFeedback?.selectionChanged(); }
+function selectDevices(d) { selDevices = d; renderDeviceChips(); renderPeriodChips(); renderPriceSummary(); if (tg) tg.HapticFeedback?.selectionChanged(); }
+function selectPeriod(key) { selPeriod = key; renderPeriodChips(); renderPriceSummary(); if (tg) tg.HapticFeedback?.selectionChanged(); }
+
+function renderTopupChips() {
+  document.getElementById('topupChips').innerHTML = CONFIG.topupPresets.map(v =>
+    `<div class="topup-chip" onclick="sendToBot('/topup_${v}')">+${v}</div>`).join('');
+}
+
+renderTariffTabs();
+renderTariffInfo();
+renderDeviceChips();
+renderPeriodChips();
+renderPriceSummary();
+renderRegions();
+renderTopupChips();
+
+// ══════════════════════ Prime period toggle ══════════════════════
+let primePeriod = 'month';
+function selectPrimePeriod(el, period) {
+  document.querySelectorAll('.prime-period-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  primePeriod = period;
+  const price = CONFIG.primePrices[period];
+  document.getElementById('primePrice').innerHTML = period === 'year'
+    ? `${price} ₽<span>/год</span>`
+    : `${price} ₽<span>/месяц</span>`;
+  if (tg) tg.HapticFeedback?.selectionChanged();
+}
+(function primeYearSavings() {
+  const m = CONFIG.primePrices.month * 12;
+  const y = CONFIG.primePrices.year;
+  const save = Math.round((1 - y / m) * 100);
+  document.getElementById('primeYearSave').textContent = `-${save}%`;
+})();
+
+// ══════════════════════ Screen navigation ══════════════════════
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-' + name).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.screen === name));
+  document.querySelectorAll('.theme-layer').forEach(l => l.classList.toggle('active', l.dataset.screen === name));
+  document.querySelectorAll('.mesh-layer').forEach(l => l.classList.toggle('active', l.dataset.screen === name));
+  document.getElementById('payBar').classList.toggle('show', name === 'shop');
+  window.scrollTo({ top: 0 });
   if (tg) tg.HapticFeedback?.selectionChanged();
 }
 
-// ── Select protocol ──
-function selectProto(el, proto) {
-  document.querySelectorAll('.proto-tab').forEach(t => t.classList.remove('active'));
-  el.classList.add('active');
-  selectedProto = proto;
-}
-
-// ── Pay ──
+// ══════════════════════ Pay ══════════════════════
 async function handlePay() {
   const userId = tg?.initDataUnsafe?.user?.id || null;
-
   document.getElementById('loadingOverlay').classList.add('show');
   if (tg) tg.HapticFeedback?.impactOccurred('medium');
 
@@ -631,24 +1482,18 @@ async function handlePay() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        plan: selectedPlan,
-        price: selectedPrice,
-        protocol: selectedProto,
+        tariff: selTariff,
+        devices: selDevices,
+        period: selPeriod,
+        price: CONFIG.plans[selTariff].prices[selDevices][selPeriod],
         user_id: userId,
         init_data: tg?.initData || ''
       })
     });
-
     const data = await resp.json();
-
     if (data.payment_url) {
       document.getElementById('loadingOverlay').classList.remove('show');
-      // Открываем ссылку на оплату
-      if (tg) {
-        tg.openLink(data.payment_url);
-      } else {
-        window.open(data.payment_url, '_blank');
-      }
+      if (tg) { tg.openLink(data.payment_url); } else { window.open(data.payment_url, '_blank'); }
     } else {
       throw new Error(data.error || 'Ошибка создания платежа');
     }
@@ -659,15 +1504,219 @@ async function handlePay() {
   }
 }
 
-// ── Success (вызывается ботом через URL param) ──
+function handlePrimeBuy() {
+  sendToBot('/prime_' + primePeriod);
+}
+
+function copyReferral() {
+  const code = document.getElementById('referralCode').textContent.trim();
+  if (!code || code.includes('—')) return;
+  navigator.clipboard?.writeText(code).then(() => showToast('Скопировано'));
+  if (tg) tg.HapticFeedback?.notificationOccurred('success');
+}
+
+function applyPromo() {
+  const val = document.getElementById('promoInput').value.trim();
+  if (!val) return;
+  showToast('Промокод отправлен на проверку');
+  document.getElementById('promoInput').value = '';
+  if (tg) tg.HapticFeedback?.notificationOccurred('success');
+}
+
+function sendToBot(command) {
+  if (tg) {
+    tg.sendData ? tg.sendData(command) : tg.openTelegramLink?.('');
+    tg.HapticFeedback?.selectionChanged();
+  }
+  showToast('Открой чат с ботом для этого раздела');
+}
+
+// ══════════════════════ ADMIN ══════════════════════
+// Список админ-ID задаётся с сервера через data-атрибут или window.ADMIN_IDS
+// При открытии Mini App бот может передавать флаг через startParam или через
+// кастомный endpoint /me. Здесь реализован «мягкий» вариант: проверяем
+// window.ADMIN_IDS (массив числовых ID), который можно установить сервером,
+// или fallback — проверяем query-параметр ?admin_token=... (для отладки).
+(function initAdmin() {
+  const u = tg?.initDataUnsafe?.user;
+  if (!u) return;
+  const uid = Number(u.id);
+
+  // Сервер должен отдавать страницу с: window.ADMIN_IDS=[123,456];
+  // (вставить в шаблон через Jinja/f-string до тега script)
+  // либо endpoint /me?init_data=... возвращает { is_admin: true }.
+  // Пока используем window.ADMIN_IDS если задан, иначе запрашиваем /me.
+  function revealAdmin() {
+    const el = document.getElementById('adminNavItem');
+    if (el) el.style.display = '';
+  }
+
+  if (Array.isArray(window.ADMIN_IDS) && window.ADMIN_IDS.includes(uid)) {
+    revealAdmin();
+    loadAdminStats();
+    return;
+  }
+
+  // Запрашиваем у сервера
+  const initData = tg?.initData || '';
+  if (!initData) return;
+  fetch('/me', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ init_data: initData })
+  }).then(r => r.json()).then(d => {
+    if (d.is_admin) { revealAdmin(); loadAdminStats(); }
+  }).catch(() => {});
+})();
+
+async function loadAdminStats() {
+  try {
+    const initData = tg?.initData || '';
+    const r = await fetch('/admin/stats_summary', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ init_data: initData })
+    });
+    if (!r.ok) return;
+    const d = await r.json();
+    if (d.users   !== undefined) document.getElementById('aStatUsers').textContent   = d.users;
+    if (d.revenue !== undefined) document.getElementById('aStatRevenue').textContent = d.revenue.toLocaleString('ru');
+    if (d.active  !== undefined) document.getElementById('aStatActive').textContent  = d.active;
+    if (d.stock   !== undefined) document.getElementById('aStatStock').textContent   = d.stock;
+    if (d.users_delta)   document.getElementById('aStatUsersD').textContent   = d.users_delta;
+    if (d.revenue_delta) document.getElementById('aStatRevenueD').textContent = d.revenue_delta;
+    if (d.active_delta)  document.getElementById('aStatActiveD').textContent  = d.active_delta;
+    if (d.stock_alert)   document.getElementById('adminNavItem')?.classList.add('has-alert');
+  } catch (e) {}
+}
+
+let toastTimer;
+function showToast(text) {
+  const el = document.getElementById('toast');
+  el.textContent = text;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+}
+
 const urlParams = new URLSearchParams(window.location.search);
 if (urlParams.get('status') === 'success') {
   document.getElementById('successOverlay').classList.add('show');
-  if (tg) {
-    tg.HapticFeedback?.notificationOccurred('success');
-    setTimeout(() => tg.close(), 3000);
-  }
+  if (tg) { tg.HapticFeedback?.notificationOccurred('success'); setTimeout(() => tg.close(), 3000); }
 }
+
+// ══════════════════════ ONBOARDING v2 (показывается один раз) ══════════════════════
+(function onboarding() {
+  const uid = tg?.initDataUnsafe?.user?.id || 'guest';
+  const STORAGE_KEY = 'occ_onboarding_v2_seen_' + uid;
+  const slides = document.querySelectorAll('.onboard-slide');
+  const slidesWrap = document.getElementById('onboardSlides');
+  const dotsWrap = document.getElementById('onboardDots');
+  const progressWrap = document.getElementById('onboardProgress');
+  const ambient = document.getElementById('onboardAmbient');
+  const nextBtn = document.getElementById('onboardNextBtn');
+  const nextLabel = document.getElementById('onboardNextLabel');
+  let idx = 0;
+  let animating = false;
+
+  const ambientTones = [
+    'radial-gradient(600px 500px at 50% -5%, rgba(168,85,247,0.32), transparent 58%), radial-gradient(400px 300px at 10% 80%, rgba(124,58,237,0.12), transparent 60%)',
+    'radial-gradient(600px 500px at 50% -5%, rgba(34,211,238,0.24), transparent 58%), radial-gradient(400px 300px at 90% 80%, rgba(6,182,212,0.12), transparent 60%)',
+    'radial-gradient(600px 500px at 50% -5%, rgba(246,196,83,0.26), transparent 58%), radial-gradient(400px 300px at 10% 80%, rgba(245,158,11,0.12), transparent 60%)',
+    'radial-gradient(600px 500px at 50% -5%, rgba(236,72,153,0.24), transparent 58%), radial-gradient(400px 300px at 90% 80%, rgba(219,39,119,0.12), transparent 60%)',
+  ];
+
+  // mesh configs per slide
+  const meshConfigs = [
+    { icon: 'om-shield', color: '#a855f7', positions: [[55,90],[310,60],[170,200],[340,290],[60,360],[280,440],[140,530],[360,620],[70,700]] },
+    { icon: 'om-lock',   color: '#22d3ee', positions: [[40,80],[320,55],[200,170],[65,280],[340,350],[160,460],[310,540],[80,640],[250,720]] },
+    { icon: 'om-globe',  color: '#f6c453', positions: [[70,75],[300,65],[140,210],[355,310],[55,390],[270,480],[120,570],[350,660],[90,740]] },
+    { icon: 'om-crown',  color: '#ec4899', positions: [[65,80],[330,50],[185,195],[45,310],[320,380],[170,470],[345,570],[85,660],[250,740]] },
+  ];
+
+  function renderMesh(slideIdx) {
+    const cfg = meshConfigs[slideIdx];
+    const g = document.getElementById('onbMeshIcons');
+    const svg = document.getElementById('onboardMeshSvg');
+    if (!g) return;
+    g.innerHTML = cfg.positions.map(([x, y], i) => {
+      const scale = [1.4, 2, 1.2, 1.7, 1.1, 1.9, 1.3, 1.6, 1.0][i] || 1.3;
+      return `<use href="#${cfg.icon}" transform="translate(${x},${y}) scale(${scale})" style="color:${cfg.color}"/>`;
+    }).join('');
+    g.setAttribute('color', cfg.color);
+    svg.style.opacity = '0.09';
+  }
+
+  dotsWrap.innerHTML = Array.from(slides).map((_, i) =>
+    `<div class="onboard-dot ${i === 0 ? 'active' : ''}"></div>`).join('');
+  const dots = dotsWrap.querySelectorAll('.onboard-dot');
+
+  progressWrap.innerHTML = Array.from(slides).map(() =>
+    `<div class="onboard-progress-seg"><i></i></div>`).join('');
+  const segs = progressWrap.querySelectorAll('.onboard-progress-seg');
+
+  function goTo(newIdx) {
+    if (animating || newIdx === idx) return;
+    animating = true;
+    const prev = slides[idx];
+    const next = slides[newIdx];
+    prev.classList.remove('active');
+    prev.classList.add('exit');
+    setTimeout(() => {
+      prev.classList.remove('exit');
+    }, 400);
+    next.classList.add('active');
+    idx = newIdx;
+    renderState();
+    renderMesh(idx);
+    setTimeout(() => { animating = false; }, 420);
+  }
+
+  function renderState() {
+    dots.forEach((d, i) => d.classList.toggle('active', i === idx));
+    segs.forEach((seg, i) => {
+      seg.classList.toggle('done', i < idx);
+      seg.querySelector('i').style.width = i <= idx ? '100%' : '0%';
+    });
+    ambient.style.background = ambientTones[idx] || ambientTones[0];
+    const isLast = idx === slides.length - 1;
+    nextLabel.textContent = isLast ? 'Начать — это бесплатно' : 'Далее';
+    nextBtn.classList.toggle('finishing', isLast);
+    if (tg) tg.HapticFeedback?.selectionChanged();
+  }
+
+  window.onbNext = function () {
+    if (idx < slides.length - 1) { goTo(idx + 1); }
+    else { onbFinish(); }
+  };
+
+  window.onbFinish = function () {
+    try { localStorage.setItem(STORAGE_KEY, '1'); } catch (e) {}
+    const el = document.getElementById('onboard');
+    el.style.opacity = '0';
+    setTimeout(() => { el.classList.remove('show'); el.style.opacity = ''; }, 320);
+    if (tg) tg.HapticFeedback?.impactOccurred('light');
+  };
+
+  // свайп
+  let touchX = null;
+  slidesWrap.addEventListener('touchstart', e => { touchX = e.touches[0].clientX; }, { passive: true });
+  slidesWrap.addEventListener('touchend', e => {
+    if (touchX === null) return;
+    const dx = e.changedTouches[0].clientX - touchX;
+    if (dx < -44 && idx < slides.length - 1) goTo(idx + 1);
+    else if (dx > 44 && idx > 0) goTo(idx - 1);
+    touchX = null;
+  }, { passive: true });
+
+  let seen = false;
+  try { seen = localStorage.getItem(STORAGE_KEY) === '1'; } catch (e) {}
+  if (!seen) {
+    document.getElementById('onboard').classList.add('show');
+    renderState();
+    renderMesh(0);
+  }
+})();
 </script>
 </body>
 </html>
