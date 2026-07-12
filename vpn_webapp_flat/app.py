@@ -1,10 +1,8 @@
 """
 VPN Mini App — веб-сервер для Telegram Web App.
 
-Работает в ОДНОМ процессе вместе с твоим ботом:
-- aiohttp поднимает API и отдаёт static/index.html (мини-апп);
-- существующий bot.py (aiogram polling, все хендлеры) запускается как фоновая
-  asyncio-задача внутри этого же процесса, БЕЗ единой правки в самом bot.py.
+Только API + статика (index.html). Бота (bot.py, aiogram polling) этот файл
+НЕ запускает — его нужно поднимать отдельным процессом/сервисом.
 
 Пути и поля запросов согласованы с тем, что реально шлёт index.html:
   POST /create_payment  {tariff, devices, period, region, user_id, init_data}
@@ -15,9 +13,11 @@ VPN Mini App — веб-сервер для Telegram Web App.
 Оплата и выдача конфигов используют ТЕ ЖЕ функции, что и сам бот
 (db.reserve_purchase/create_order, payments.create_lava_invoice/…,
 handlers_user._fulfill) — мини-апп не дублирует логику, а вызывает её.
+У веб-сервера свой Bot(token=...) — только для отправки сообщений/инвойсов,
+polling он не делает, поэтому конфликта (409) с ботом, запущенным отдельно,
+не будет.
 """
 
-import asyncio
 import hashlib
 import hmac
 import json
@@ -312,15 +312,10 @@ async def api_admin_stats(request):
 async def on_startup(app: web.Application):
     await db.init_db()
     await store.load_from_db()
-    import bot as bot_module  # твой bot.py — без единой правки
-    app["bot_task"] = asyncio.create_task(bot_module.main())
-    log.info("Бот запущен как фоновая задача, веб-сервер поднят.")
+    log.info("Веб-сервер поднят (бот запускается отдельно, см. bot.py).")
 
 
 async def on_cleanup(app: web.Application):
-    task = app.get("bot_task")
-    if task:
-        task.cancel()
     await bot.session.close()
 
 
