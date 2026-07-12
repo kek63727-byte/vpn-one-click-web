@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>VPN — выбор тарифа</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&family=Space+Mono:wght@400;700&display=swap');
+
+  :root {
+    --bg:       #0a0a0f;
+    --surface:  #111118;
+    --card:     #16161f;
+    --border:   rgba(255,255,255,0.07);
+    --border-h: rgba(99,102,241,0.5);
+    --accent:   #6366f1;
+    --accent2:  #818cf8;
+    --green:    #22c55e;
+    --text:     #f1f5f9;
+    --muted:    #64748b;
+    --dim:      #94a3b8;
+    --mono:     'Space Mono', monospace;
+    --sans:     'Inter', sans-serif;
+    --radius:   16px;
+    --selected-glow: 0 0 0 1.5px #6366f1, 0 0 24px rgba(99,102,241,0.25);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  html { background: var(--bg); }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 0 0 120px;
+    overflow-x: hidden;
+  }
+
+  /* ── HERO ── */
+  .hero {
+    position: relative;
+    padding: 48px 20px 32px;
+    text-align: center;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -60px; left: 50%;
+    transform: translateX(-50%);
+    width: 300px; height: 300px;
+    background: radial-gradient(circle, rgba(99,102,241,0.18) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .shield {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 72px; height: 72px;
+    margin-bottom: 20px;
+  }
+  .shield svg { width: 72px; height: 72px; }
+
+  .hero h1 {
+    font-size: 28px;
+    font-weight: 900;
+    letter-spacing: -0.5px;
+    line-height: 1.15;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, #f1f5f9 30%, #a5b4fc);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .hero p {
+    font-size: 14px;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+
+  /* ── STATUS PILLS ── */
+  .status-row {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 20px;
+  }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 12px;
+    border-radius: 100px;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: var(--mono);
+    letter-spacing: 0.3px;
+    background: rgba(34,197,94,0.1);
+    color: var(--green);
+    border: 1px solid rgba(34,197,94,0.2);
+  }
+  .pill.blue {
+    background: rgba(99,102,241,0.1);
+    color: var(--accent2);
+    border-color: rgba(99,102,241,0.2);
+  }
+  .pill-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%,100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  /* ── SECTION LABEL ── */
+  .section-label {
+    font-size: 11px;
+    font-weight: 600;
+    font-family: var(--mono);
+    color: var(--muted);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    padding: 0 20px;
+    margin-bottom: 12px;
+  }
+
+  /* ── PLANS ── */
+  .plans {
+    padding: 0 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 28px;
+  }
+
+  .plan-card {
+    position: relative;
+    background: var(--card);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 18px 18px 56px;
+    cursor: pointer;
+    transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
+    user-select: none;
+    -webkit-user-select: none;
+    overflow: hidden;
+  }
+  .plan-card:active { transform: scale(0.985); }
+  .plan-card.selected {
+    border-color: var(--accent);
+    box-shadow: var(--selected-glow);
+    background: #13131e;
+  }
+  .plan-card.popular {
+    border-color: rgba(99,102,241,0.35);
+  }
+
+  /* shimmer on selected */
+  .plan-card.selected::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(99,102,241,0.05) 0%, transparent 60%);
+    pointer-events: none;
+  }
+
+  /* radio circle */
+  .plan-radio {
+    position: absolute;
+    left: 18px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    border: 1.5px solid var(--border-h);
+    background: transparent;
+    display: flex; align-items: center; justify-content: center;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .plan-card.selected .plan-radio {
+    border-color: var(--accent);
+    background: var(--accent);
+  }
+  .plan-radio-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: white;
+    opacity: 0;
+    transform: scale(0);
+    transition: opacity 0.15s, transform 0.15s;
+  }
+  .plan-card.selected .plan-radio-dot {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .plan-badge {
+    position: absolute;
+    top: 12px; right: 12px;
+    padding: 3px 9px;
+    border-radius: 100px;
+    font-size: 10px;
+    font-weight: 700;
+    font-family: var(--mono);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  .badge-popular {
+    background: rgba(99,102,241,0.15);
+    color: var(--accent2);
+    border: 1px solid rgba(99,102,241,0.3);
+  }
+  .badge-best {
+    background: rgba(34,197,94,0.12);
+    color: var(--green);
+    border: 1px solid rgba(34,197,94,0.25);
+  }
+
+  .plan-name {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 2px;
+  }
+  .plan-desc {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .plan-price-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+  .plan-price {
+    font-size: 22px;
+    font-weight: 900;
+    font-family: var(--mono);
+    color: var(--text);
+    letter-spacing: -0.5px;
+  }
+  .plan-currency {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--dim);
+  }
+  .plan-per {
+    font-size: 11px;
+    color: var(--muted);
+    margin-left: 2px;
+  }
+  .plan-save {
+    font-size: 10px;
+    font-weight: 700;
+    font-family: var(--mono);
+    color: var(--green);
+    margin-left: auto;
+  }
+
+  /* ── FEATURES ── */
+  .features {
+    padding: 0 16px;
+    margin-bottom: 28px;
+  }
+  .features-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .feat {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .feat-icon {
+    font-size: 20px;
+    line-height: 1;
+  }
+  .feat-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .feat-sub {
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.4;
+  }
+
+  /* ── PROTOCOL SELECTOR ── */
+  .proto-section {
+    padding: 0 16px;
+    margin-bottom: 28px;
+  }
+  .proto-tabs {
+    display: flex;
+    gap: 6px;
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 4px;
+    border: 1px solid var(--border);
+  }
+  .proto-tab {
+    flex: 1;
+    padding: 9px 0;
+    border-radius: 9px;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: var(--mono);
+    color: var(--muted);
+    text-align: center;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+  }
+  .proto-tab.active {
+    background: var(--card);
+    color: var(--text);
+    border: 1px solid var(--border-h);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+
+  /* ── PAY BUTTON ── */
+  .pay-bar {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+    background: linear-gradient(to top, var(--bg) 70%, transparent);
+    z-index: 100;
+  }
+  .pay-btn {
+    width: 100%;
+    height: 56px;
+    border-radius: 16px;
+    border: none;
+    background: linear-gradient(135deg, #6366f1, #818cf8);
+    color: white;
+    font-family: var(--sans);
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: opacity 0.2s, transform 0.15s;
+    box-shadow: 0 8px 32px rgba(99,102,241,0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    letter-spacing: -0.2px;
+  }
+  .pay-btn:active { transform: scale(0.97); opacity: 0.9; }
+  .pay-btn::before {
+    content: '';
+    position: absolute;
+    top: 0; left: -100%; width: 60%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
+    animation: shine 3s ease-in-out infinite;
+  }
+  @keyframes shine {
+    0% { left: -100%; }
+    40%,100% { left: 150%; }
+  }
+  .pay-amount {
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 15px;
+    opacity: 0.85;
+    background: rgba(255,255,255,0.15);
+    padding: 4px 10px;
+    border-radius: 8px;
+  }
+
+  /* ── LOADING ── */
+  .loading-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(10,10,15,0.85);
+    backdrop-filter: blur(8px);
+    z-index: 200;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+  }
+  .loading-overlay.show { display: flex; }
+  .spinner {
+    width: 44px; height: 44px;
+    border: 3px solid rgba(99,102,241,0.2);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { font-size: 14px; color: var(--dim); }
+
+  /* ── SUCCESS ── */
+  .success-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    z-index: 300;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 32px;
+    text-align: center;
+  }
+  .success-overlay.show { display: flex; }
+  .success-icon {
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    background: rgba(34,197,94,0.12);
+    border: 2px solid rgba(34,197,94,0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 36px;
+  }
+  .success-title {
+    font-size: 24px;
+    font-weight: 900;
+    letter-spacing: -0.5px;
+    color: var(--text);
+  }
+  .success-sub {
+    font-size: 14px;
+    color: var(--muted);
+    line-height: 1.6;
+    max-width: 280px;
+  }
+  .divider { height: 1px; background: var(--border); margin: 0 16px 24px; }
+</style>
+</head>
+<body>
+
+<!-- ── HERO ── -->
+<div class="hero">
+  <div class="shield">
+    <svg viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="sg" cx="50%" cy="30%" r="60%">
+          <stop offset="0%" stop-color="#818cf8"/>
+          <stop offset="100%" stop-color="#6366f1"/>
+        </radialGradient>
+      </defs>
+      <path d="M36 6L10 18v18c0 14.6 11.1 28.3 26 31.4C51.9 64.3 62 50.6 62 36V18L36 6z" fill="url(#sg)" opacity="0.15"/>
+      <path d="M36 10L13 21v15c0 12.7 9.8 24.5 23 27.2C49.2 60.5 59 48.7 59 36V21L36 10z" stroke="url(#sg)" stroke-width="1.5" fill="none"/>
+      <path d="M27 36l6 6 12-12" stroke="#818cf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </div>
+  <h1>Защищённый VPN<br>без лишнего шума</h1>
+  <p>Быстрый доступ. Без логов.<br>Работает везде — даже там, где всё заблокировано.</p>
+  <div class="status-row">
+    <span class="pill"><span class="pill-dot"></span>Серверы онлайн</span>
+    <span class="pill blue">WireGuard / VLESS</span>
+  </div>
+</div>
+
+<!-- ── PLANS ── -->
+<div class="section-label">Выбери тариф</div>
+<div class="plans" id="plans">
+
+  <div class="plan-card" data-plan="1m" data-price="149" onclick="selectPlan(this)">
+    <div class="plan-radio"><div class="plan-radio-dot"></div></div>
+    <div class="plan-name">1 месяц</div>
+    <div class="plan-desc">Попробовать без обязательств</div>
+    <div class="plan-price-row">
+      <span class="plan-price">149</span>
+      <span class="plan-currency">₽</span>
+      <span class="plan-per">/ мес</span>
+    </div>
+  </div>
+
+  <div class="plan-card popular selected" data-plan="3m" data-price="349" onclick="selectPlan(this)">
+    <div class="plan-radio"><div class="plan-radio-dot"></div></div>
+    <span class="plan-badge badge-popular">Хит</span>
+    <div class="plan-name">3 месяца</div>
+    <div class="plan-desc">Самый популярный выбор</div>
+    <div class="plan-price-row">
+      <span class="plan-price">349</span>
+      <span class="plan-currency">₽</span>
+      <span class="plan-per">/ 3 мес</span>
+      <span class="plan-save">-22%</span>
+    </div>
+  </div>
+
+  <div class="plan-card" data-plan="6m" data-price="599" onclick="selectPlan(this)">
+    <div class="plan-radio"><div class="plan-radio-dot"></div></div>
+    <span class="plan-badge badge-best">Выгодно</span>
+    <div class="plan-name">6 месяцев</div>
+    <div class="plan-desc">Лучшая цена за месяц</div>
+    <div class="plan-price-row">
+      <span class="plan-price">599</span>
+      <span class="plan-currency">₽</span>
+      <span class="plan-per">/ 6 мес</span>
+      <span class="plan-save">-33%</span>
+    </div>
+  </div>
+
+  <div class="plan-card" data-plan="12m" data-price="999" onclick="selectPlan(this)">
+    <div class="plan-radio"><div class="plan-radio-dot"></div></div>
+    <span class="plan-badge badge-best">Максимум</span>
+    <div class="plan-name">12 месяцев</div>
+    <div class="plan-desc">Для тех, кто ценит стабильность</div>
+    <div class="plan-price-row">
+      <span class="plan-price">999</span>
+      <span class="plan-currency">₽</span>
+      <span class="plan-per">/ год</span>
+      <span class="plan-save">-44%</span>
+    </div>
+  </div>
+
+</div>
+
+<div class="divider"></div>
+
+<!-- ── PROTOCOL ── -->
+<div class="proto-section">
+  <div class="section-label" style="padding:0;margin-bottom:12px;">Протокол</div>
+  <div class="proto-tabs">
+    <div class="proto-tab active" onclick="selectProto(this,'wireguard')">WireGuard</div>
+    <div class="proto-tab" onclick="selectProto(this,'vless')">VLESS</div>
+    <div class="proto-tab" onclick="selectProto(this,'outline')">Outline</div>
+  </div>
+</div>
+
+<!-- ── FEATURES ── -->
+<div class="features">
+  <div class="section-label" style="padding:0;margin-bottom:12px;">Что включено</div>
+  <div class="features-grid">
+    <div class="feat">
+      <div class="feat-icon">⚡</div>
+      <div class="feat-title">Высокая скорость</div>
+      <div class="feat-sub">До 1 Гбит/с на сервер</div>
+    </div>
+    <div class="feat">
+      <div class="feat-icon">🔒</div>
+      <div class="feat-title">Без логов</div>
+      <div class="feat-sub">Никакой слежки за трафиком</div>
+    </div>
+    <div class="feat">
+      <div class="feat-icon">🌍</div>
+      <div class="feat-title">Любые страны</div>
+      <div class="feat-sub">RU, NL, DE, US и другие</div>
+    </div>
+    <div class="feat">
+      <div class="feat-icon">📱</div>
+      <div class="feat-title">Все устройства</div>
+      <div class="feat-sub">iOS, Android, Windows, Mac</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── PAY BAR ── -->
+<div class="pay-bar">
+  <button class="pay-btn" id="payBtn" onclick="handlePay()">
+    <span>Оплатить через СБП</span>
+    <span class="pay-amount" id="payAmount">349 ₽</span>
+  </button>
+</div>
+
+<!-- ── LOADING ── -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="spinner"></div>
+  <div class="loading-text">Создаём ссылку на оплату…</div>
+</div>
+
+<!-- ── SUCCESS ── -->
+<div class="success-overlay" id="successOverlay">
+  <div class="success-icon">✓</div>
+  <div class="success-title">Оплата прошла!</div>
+  <div class="success-sub">Конфигурация уже отправлена тебе в бот. Просто вернись в Telegram.</div>
+</div>
+
+<script>
+// ── Telegram Web App init ──
+const tg = window.Telegram?.WebApp;
+if (tg) {
+  tg.ready();
+  tg.expand();
+  tg.setHeaderColor('#0a0a0f');
+  tg.setBackgroundColor('#0a0a0f');
+}
+
+// ── State ──
+let selectedPlan  = '3m';
+let selectedPrice = 349;
+let selectedProto = 'wireguard';
+
+// ── Select plan ──
+function selectPlan(el) {
+  document.querySelectorAll('.plan-card').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+  selectedPlan  = el.dataset.plan;
+  selectedPrice = parseInt(el.dataset.price);
+  document.getElementById('payAmount').textContent = selectedPrice + ' ₽';
+  if (tg) tg.HapticFeedback?.selectionChanged();
+}
+
+// ── Select protocol ──
+function selectProto(el, proto) {
+  document.querySelectorAll('.proto-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  selectedProto = proto;
+}
+
+// ── Pay ──
+async function handlePay() {
+  const userId = tg?.initDataUnsafe?.user?.id || null;
+
+  document.getElementById('loadingOverlay').classList.add('show');
+  if (tg) tg.HapticFeedback?.impactOccurred('medium');
+
+  try {
+    const resp = await fetch('/create_payment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        plan: selectedPlan,
+        price: selectedPrice,
+        protocol: selectedProto,
+        user_id: userId,
+        init_data: tg?.initData || ''
+      })
+    });
+
+    const data = await resp.json();
+
+    if (data.payment_url) {
+      document.getElementById('loadingOverlay').classList.remove('show');
+      // Открываем ссылку на оплату
+      if (tg) {
+        tg.openLink(data.payment_url);
+      } else {
+        window.open(data.payment_url, '_blank');
+      }
+    } else {
+      throw new Error(data.error || 'Ошибка создания платежа');
+    }
+  } catch (err) {
+    document.getElementById('loadingOverlay').classList.remove('show');
+    alert('Ошибка: ' + err.message);
+    if (tg) tg.HapticFeedback?.notificationOccurred('error');
+  }
+}
+
+// ── Success (вызывается ботом через URL param) ──
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.get('status') === 'success') {
+  document.getElementById('successOverlay').classList.add('show');
+  if (tg) {
+    tg.HapticFeedback?.notificationOccurred('success');
+    setTimeout(() => tg.close(), 3000);
+  }
+}
+</script>
+</body>
+</html>
