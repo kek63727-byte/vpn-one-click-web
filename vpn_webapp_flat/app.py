@@ -9,6 +9,11 @@ VPN Mini App — веб-сервер для Telegram Web App.
   POST /check_payment   {order_id, method, invoice_id, init_data}
   POST /me              {init_data}                       -> { is_admin, ... }
   POST /admin/stats_summary {init_data}                    -> { users, revenue, active, stock, ... }
+
+ОПЛАТА ПО УМОЛЧАНИЮ: LAVA (СБП / карта).
+Метод оплаты берётся из config.PAYMENT_MODE. Любое неизвестное или служебное
+значение ("choice", пусто, опечатка и т.п.) приводится к "lava" функцией
+_resolve_payment_method(), чтобы платежи "по базе" всегда уходили через LAVA.
 """
 
 import hashlib
@@ -42,6 +47,23 @@ bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTM
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 
+# Известные методы оплаты. Всё, что вне этого списка (включая "choice"),
+# приводится к дефолтному методу LAVA.
+_KNOWN_METHODS = {"lava", "sbp", "card", "crypto", "stars", "yookassa"}
+_DEFAULT_METHOD = "lava"
+
+
+def _resolve_payment_method(requested: str | None) -> str:
+    """Возвращает валидный метод оплаты, по умолчанию — LAVA.
+
+    Используется и для /create_payment (метод берётся из конфига),
+    и для /topup (метод может быть передан явно телом запроса).
+    """
+    method = (requested or "").strip().lower()
+    if method not in _KNOWN_METHODS:
+        return _DEFAULT_METHOD
+    return method
+
 
 # ───────────────────────── Telegram WebApp initData ─────────────────────────
 
@@ -55,7 +77,6 @@ def parse_init_data(init_data: str) -> dict | None:
         if not recv_hash:
             return None
         data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(pairs.items()))
-        # ИСПРАВЛЕНО: правильный вызов hmac.new
         secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
         calc_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(calc_hash, recv_hash):
@@ -215,7 +236,9 @@ async def api_create_payment(request):
                                       paid_money=False, lang=lang)
         return web.json_response({"paid": True, "order_id": order_id})
 
-    method = PAYMENT_MODE if PAYMENT_MODE != "choice" else "lava"
+    # Метод оплаты: по умолчанию LAVA (СБП/карта). Любое неизвестное значение
+    # PAYMENT_MODE (в т.ч. "choice") приводится к "lava".
+    method = _resolve_payment_method(PAYMENT_MODE)
     title = f"{PLANS[plan]['title']} · {devices} устр. · {period}"
     desc = f"VPN-доступ ({region})."
     invoice_id = None
@@ -232,7 +255,9 @@ async def api_create_payment(request):
             params = pay.invoice_params(title, desc, f"order:{order_id}", to_pay)
             pay_url = await bot.create_invoice_link(**params)
         else:
-            raise RuntimeError(f"неизвестный PAYMENT_MODE: {method!r}")
+            # Не должно происходить (метод уже нормализован), но на всякий случай — LAVA.
+            _iid, pay_url = await pay.create_lava_invoice(order_id, to_pay, title)
+            method = "lava"
     except Exception as e:
         log.exception("invoice error (%s): %s", method, e)
         await db.free_configs(config_ids)
@@ -260,7 +285,7 @@ async def api_check_payment(request):
         order_id = int(body.get("order_id"))
     except (TypeError, ValueError):
         return web.json_response({"error": "bad_order_id"}, status=400)
-    method = body.get("method")
+    method = _resolve_payment_method(body.get("method"))
     invoice_id = body.get("invoice_id")
 
     order = await db.get_order(order_id)
@@ -351,9 +376,9 @@ async def api_topup(request):
     if amount < 50:
         return web.json_response({"error": "min_50"}, status=400)
 
-    method = body.get("method", PAYMENT_MODE)
-    if method == "choice":
-        method = "lava"
+    # Метод оплаты: если фронт явно передал method — используем его (после валидации),
+    # иначе — берём из конфига. В любом случае неизвестное значение → LAVA.
+    method = _resolve_payment_method(body.get("method") or PAYMENT_MODE)
 
     topup_id = await db.create_topup(user_id, amount, method)
     title = f"Пополнение баланса {amount} ₽"
@@ -369,7 +394,9 @@ async def api_topup(request):
             params = pay.invoice_params(title, title, f"topup:{topup_id}", amount)
             pay_url = await bot.create_invoice_link(**params)
         else:
-            raise RuntimeError(f"неизвестный метод: {method!r}")
+            # На всякий случай — LAVA.
+            _iid, pay_url = await pay.create_lava_invoice(topup_id, amount, title)
+            method = "lava"
     except Exception as e:
         log.exception("topup invoice error: %s", e)
         return web.json_response({"error": "payment_unavailable"}, status=500)
@@ -396,7 +423,7 @@ async def api_check_topup(request):
     except (TypeError, ValueError):
         return web.json_response({"error": "bad_topup_id"}, status=400)
 
-    method = body.get("method", "lava")
+    method = _resolve_payment_method(body.get("method"))
     invoice_id = body.get("invoice_id")
 
     topup = await db.get_topup(topup_id)
