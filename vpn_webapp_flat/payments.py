@@ -1,4 +1,4 @@
-"""Расчёт цен и параметров оплаты: Telegram Stars / ЮKassa / Crypto Pay."""
+"""Расчёт цен и параметров оплаты: Telegram Stars / ЮKassa / Crypto Pay / LAVA."""
 
 from math import ceil
 
