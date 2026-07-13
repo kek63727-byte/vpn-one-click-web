@@ -14,6 +14,16 @@ VPN Mini App — веб-сервер для Telegram Web App.
 Метод оплаты берётся из config.PAYMENT_MODE. Любое неизвестное или служебное
 значение ("choice", пусто, опечатка и т.п.) приводится к "lava" функцией
 _resolve_payment_method(), чтобы платежи "по базе" всегда уходили через LAVA.
+
+ВАЖНО про orderId для LAVA: заказы (order_id) и пополнения баланса (topup_id)
+хранятся в РАЗНЫХ таблицах с независимыми autoincrement-счётчиками, поэтому
+их значения могут совпадать (например order_id=5 и topup_id=5). LAVA хранит
+все orderId у себя в рамках магазина и отклоняет повтор ошибкой "OrderId
+должен быть уникальным", даже если для нас это два разных объекта. Поэтому
+все вызовы create_lava_invoice/check_lava_invoice для пополнений передают
+kind="topup", а для обычных заказов используется kind="order" по умолчанию
+— так orderId у LAVA всегда получается вида "order-5" / "topup-5" и не
+пересекается.
 """
 
 import hashlib
@@ -245,6 +255,8 @@ async def api_create_payment(request):
 
     try:
         if method in ("lava", "sbp", "card"):
+            # kind="order" (по умолчанию) — namespace для orderId, чтобы не
+            # пересекаться с topup_id из /topup (см. комментарий в шапке файла).
             _iid, pay_url = await pay.create_lava_invoice(order_id, to_pay, title)
             method = "lava"
         elif method == "crypto":
@@ -296,6 +308,8 @@ async def api_check_payment(request):
 
     try:
         if method == "lava":
+            # kind="order" (по умолчанию) — должен совпадать с тем, что было
+            # передано в create_lava_invoice при создании этого заказа выше.
             paid = await pay.check_lava_invoice(order_id)
             ref = str(order_id)
         elif method == "crypto":
@@ -386,7 +400,9 @@ async def api_topup(request):
 
     try:
         if method in ("lava", "sbp", "card"):
-            _iid, pay_url = await pay.create_lava_invoice(topup_id, amount, title)
+            # kind="topup" — orderId у LAVA получится вида "topup-<id>", чтобы
+            # не пересекаться с order_id из /create_payment (см. шапку файла).
+            _iid, pay_url = await pay.create_lava_invoice(topup_id, amount, title, kind="topup")
             method = "lava"
         elif method == "crypto":
             invoice_id, pay_url = await pay.create_crypto_invoice(topup_id, amount, title)
@@ -395,7 +411,7 @@ async def api_topup(request):
             pay_url = await bot.create_invoice_link(**params)
         else:
             # На всякий случай — LAVA.
-            _iid, pay_url = await pay.create_lava_invoice(topup_id, amount, title)
+            _iid, pay_url = await pay.create_lava_invoice(topup_id, amount, title, kind="topup")
             method = "lava"
     except Exception as e:
         log.exception("topup invoice error: %s", e)
@@ -435,7 +451,9 @@ async def api_check_topup(request):
 
     try:
         if method == "lava":
-            paid = await pay.check_lava_invoice(topup_id)
+            # kind="topup" — должен совпадать с тем, что передавалось в
+            # create_lava_invoice при создании этого пополнения в /topup.
+            paid = await pay.check_lava_invoice(topup_id, kind="topup")
         elif method == "crypto":
             paid = await pay.check_crypto_invoice(int(invoice_id))
         else:
