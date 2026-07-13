@@ -9,13 +9,6 @@ VPN Mini App — веб-сервер для Telegram Web App.
   POST /check_payment   {order_id, method, invoice_id, init_data}
   POST /me              {init_data}                       -> { is_admin, ... }
   POST /admin/stats_summary {init_data}                    -> { users, revenue, active, stock, ... }
-
-Оплата и выдача конфигов используют ТЕ ЖЕ функции, что и сам бот
-(db.reserve_purchase/create_order, payments.create_lava_invoice/…,
-handlers_user._fulfill) — мини-апп не дублирует логику, а вызывает её.
-У веб-сервера свой Bot(token=...) — только для отправки сообщений/инвойсов,
-polling он не делает, поэтому конфликта (409) с ботом, запущенным отдельно,
-не будет.
 """
 
 import hashlib
@@ -35,7 +28,7 @@ from aiohttp import web
 import db
 import store
 import payments as pay
-import handlers_user  # переиспользуем _fulfill — та же выдача, что и в боте
+import handlers_user
 from config import ADMIN_IDS, BOT_TOKEN, PAYMENT_MODE, PLANS, RESTOCK_THRESHOLD
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -53,9 +46,7 @@ STATIC_DIR = os.path.join(BASE_DIR, "static")
 # ───────────────────────── Telegram WebApp initData ─────────────────────────
 
 def parse_init_data(init_data: str) -> dict | None:
-    """Проверяет подпись initData из Telegram.WebApp.initData.
-    None, если подпись неверна — БЕЗ этой проверки любой мог бы прислать
-    чужой user_id и покупать/списывать баланс за чужой счёт."""
+    """Проверяет подпись initData из Telegram.WebApp.initData."""
     if not init_data:
         return None
     try:
@@ -64,6 +55,7 @@ def parse_init_data(init_data: str) -> dict | None:
         if not recv_hash:
             return None
         data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(pairs.items()))
+        # ИСПРАВЛЕНО: правильный вызов hmac.new
         secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
         calc_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(calc_hash, recv_hash):
@@ -88,14 +80,12 @@ async def _auth(request: web.Request) -> dict | None:
     except Exception:
         body = {}
     init_data = body.get("init_data", "")
-    request["_body"] = body  # чтобы не читать тело дважды
+    request["_body"] = body
     return parse_init_data(init_data)
 
 
 class _TargetShim:
-    """handlers_user._fulfill() ожидает aiogram Message (.answer/.answer_document/
-    .answer_photo — шлют в тот же чат). Из HTTP-запроса чата нет — шлём эти же
-    типы сообщений напрямую по user_id через Bot API."""
+    """Шим для handlers_user._fulfill() — шлёт сообщения по user_id через Bot API."""
 
     def __init__(self, chat_id: int):
         self.chat_id = chat_id
@@ -135,6 +125,23 @@ async def api_me(request):
     balance = await db.get_balance(user_id)
     spent = await db.total_spent(user_id)
 
+    # Загружаем активные конфиги пользователя для экрана "Подключения"
+    configs = await db.user_configs(user_id)
+    active_configs = [
+        {
+            "id": c["id"],
+            "region": c["region"],
+            "plan": c.get("plan", "standard"),
+            "expires_at": (c.get("expires_at") or "")[:10],
+            "status": c.get("status", ""),
+        }
+        for c in configs if c.get("status") == "sold"
+    ]
+
+    # Реферальный код и статистика
+    ref_stats = await db.referral_stats(user_id)
+    ref_cash = await db.get_ref_cash(user_id)
+
     return web.json_response({
         "is_admin": user_id in ADMIN_IDS,
         "user_id": user_id,
@@ -142,13 +149,15 @@ async def api_me(request):
         "balance": balance,
         "total_spent": spent,
         "loyalty_percent": pay.loyalty_percent_for(spent),
+        "active_configs": active_configs,
+        "ref_invited": ref_stats.get("invited", 0),
+        "ref_cash": ref_cash,
+        "referral_code": str(user_id),
     })
 
 
 def _pick_region(plan: str) -> tuple[str, bool] | None:
-    """Fallback, если фронт почему-то не прислал region: берём первый регион
-    каталога с достаточным типом доступа (используется только если фронт
-    старой версии — актуальный index.html теперь всегда шлёт region сам)."""
+    """Fallback: берём первый подходящий регион из каталога."""
     premium_ok = PLANS[plan]["premium_access"]
     for region, is_premium in store.CATALOG:
         if is_premium and not premium_ok:
@@ -184,7 +193,7 @@ async def api_create_payment(request):
     elif store.is_premium_region(region) and not PLANS[plan]["premium_access"]:
         return web.json_response({"error": "region_locked"}, status=400)
 
-    # Цена считается ТОЛЬКО на сервере — цену, присланную фронтом, не используем.
+    # Цена считается ТОЛЬКО на сервере
     full = pay.price_rub(plan, devices, period)
     spent = await db.total_spent(user_id)
     discount = full * pay.loyalty_percent_for(spent) // 100
@@ -199,13 +208,14 @@ async def api_create_payment(request):
                                       full, discount, to_pay)
     lang = await db.get_lang(user_id)
 
+    # Если к оплате 0 — сразу выдаём (бонусный баланс покрыл)
     if to_pay <= 0:
         order = await db.get_order(order_id)
         await handlers_user._fulfill(_TargetShim(user_id), user_id, order, bot,
                                       paid_money=False, lang=lang)
         return web.json_response({"paid": True, "order_id": order_id})
 
-    method = PAYMENT_MODE if PAYMENT_MODE != "choice" else "crypto"
+    method = PAYMENT_MODE if PAYMENT_MODE != "choice" else "lava"
     title = f"{PLANS[plan]['title']} · {devices} устр. · {period}"
     desc = f"VPN-доступ ({region})."
     invoice_id = None
@@ -213,6 +223,7 @@ async def api_create_payment(request):
     try:
         if method in ("lava", "sbp", "card"):
             _iid, pay_url = await pay.create_lava_invoice(order_id, to_pay, title)
+            method = "lava"
         elif method == "crypto":
             invoice_id, pay_url = await pay.create_crypto_invoice(order_id, to_pay, title)
             if not pay_url:
@@ -220,9 +231,6 @@ async def api_create_payment(request):
         elif method in ("stars", "yookassa"):
             params = pay.invoice_params(title, desc, f"order:{order_id}", to_pay)
             pay_url = await bot.create_invoice_link(**params)
-            # Для stars/yookassa оплата подтвердится САМА через pre_checkout/
-            # successful_payment хендлеры в handlers_user.py — их обрабатывает
-            # polling-бот, запущенный этим же процессом. check_payment не нужен.
         else:
             raise RuntimeError(f"неизвестный PAYMENT_MODE: {method!r}")
     except Exception as e:
@@ -241,8 +249,7 @@ async def api_create_payment(request):
 
 @routes.post("/check_payment")
 async def api_check_payment(request):
-    """Мини-апп зовёт это, когда пользователь вернулся после оплаты (lava/crypto) —
-    аналог кнопки «Я оплатил — проверить» в самом боте."""
+    """Проверка оплаты после возврата пользователя из платёжной системы."""
     auth = await _auth(request)
     if not auth:
         return web.json_response({"error": "bad_init_data"}, status=401)
@@ -285,6 +292,142 @@ async def api_check_payment(request):
     return web.json_response({"status": "paid"})
 
 
+@routes.post("/apply_promo")
+async def api_apply_promo(request):
+    """Применить промокод из мини-аппа."""
+    auth = await _auth(request)
+    if not auth:
+        return web.json_response({"error": "bad_init_data"}, status=401)
+    user_id = auth["user_id"]
+    body = request["_body"]
+    code = (body.get("code") or "").strip().upper()
+    if not code:
+        return web.json_response({"error": "empty_code"}, status=400)
+
+    promo = await db.get_promo(code)
+    if not promo:
+        return web.json_response({"error": "not_found"}, status=404)
+
+    if await db.promo_redeemed_by(code, user_id):
+        return web.json_response({"error": "already_used"}, status=409)
+
+    if promo["kind"] == "balance":
+        await db.add_balance(user_id, promo["amount_rub"])
+        await db.use_promo(code)
+        await db.record_promo_redemption(code, user_id)
+        balance = await db.get_balance(user_id)
+        return web.json_response({
+            "ok": True,
+            "kind": "balance",
+            "amount": promo["amount_rub"],
+            "new_balance": balance,
+        })
+    elif promo["kind"] == "discount":
+        # Скидочный промокод — возвращаем процент, применяется при следующей покупке
+        return web.json_response({
+            "ok": True,
+            "kind": "discount",
+            "percent": promo["percent"],
+            "code": code,
+        })
+    else:
+        return web.json_response({"error": "unknown_kind"}, status=400)
+
+
+@routes.post("/topup")
+async def api_topup(request):
+    """Пополнение баланса через мини-апп."""
+    auth = await _auth(request)
+    if not auth:
+        return web.json_response({"error": "bad_init_data"}, status=401)
+    user_id = auth["user_id"]
+    body = request["_body"]
+
+    try:
+        amount = int(body.get("amount", 0))
+    except (TypeError, ValueError):
+        return web.json_response({"error": "bad_amount"}, status=400)
+
+    if amount < 50:
+        return web.json_response({"error": "min_50"}, status=400)
+
+    method = body.get("method", PAYMENT_MODE)
+    if method == "choice":
+        method = "lava"
+
+    topup_id = await db.create_topup(user_id, amount, method)
+    title = f"Пополнение баланса {amount} ₽"
+    invoice_id = None
+
+    try:
+        if method in ("lava", "sbp", "card"):
+            _iid, pay_url = await pay.create_lava_invoice(topup_id, amount, title)
+            method = "lava"
+        elif method == "crypto":
+            invoice_id, pay_url = await pay.create_crypto_invoice(topup_id, amount, title)
+        elif method in ("stars", "yookassa"):
+            params = pay.invoice_params(title, title, f"topup:{topup_id}", amount)
+            pay_url = await bot.create_invoice_link(**params)
+        else:
+            raise RuntimeError(f"неизвестный метод: {method!r}")
+    except Exception as e:
+        log.exception("topup invoice error: %s", e)
+        return web.json_response({"error": "payment_unavailable"}, status=500)
+
+    return web.json_response({
+        "payment_url": pay_url,
+        "topup_id": topup_id,
+        "method": method,
+        "invoice_id": invoice_id,
+    })
+
+
+@routes.post("/check_topup")
+async def api_check_topup(request):
+    """Проверка пополнения баланса."""
+    auth = await _auth(request)
+    if not auth:
+        return web.json_response({"error": "bad_init_data"}, status=401)
+    user_id = auth["user_id"]
+    body = request["_body"]
+
+    try:
+        topup_id = int(body.get("topup_id"))
+    except (TypeError, ValueError):
+        return web.json_response({"error": "bad_topup_id"}, status=400)
+
+    method = body.get("method", "lava")
+    invoice_id = body.get("invoice_id")
+
+    topup = await db.get_topup(topup_id)
+    if not topup or topup.get("user_id") != user_id:
+        return web.json_response({"error": "not_found"}, status=404)
+    if topup.get("status") == "paid":
+        balance = await db.get_balance(user_id)
+        return web.json_response({"status": "paid", "balance": balance})
+
+    try:
+        if method == "lava":
+            paid = await pay.check_lava_invoice(topup_id)
+        elif method == "crypto":
+            paid = await pay.check_crypto_invoice(int(invoice_id))
+        else:
+            return web.json_response({"status": "pending"})
+    except Exception as e:
+        log.exception("check_topup error: %s", e)
+        return web.json_response({"error": str(e)}, status=500)
+
+    if not paid:
+        return web.json_response({"status": "pending"})
+
+    await db.set_topup_paid(topup_id)
+    await db.add_balance(user_id, topup["amount_rub"])
+    await db.record_payment(user_id, 0, topup["amount_rub"], method.upper(), str(topup_id))
+
+    balance = await db.get_balance(user_id)
+    return web.json_response({"status": "paid", "balance": balance})
+
+
 @routes.post("/admin/stats_summary")
 async def api_admin_stats(request):
     auth = await _auth(request)
@@ -304,6 +447,8 @@ async def api_admin_stats(request):
         "stock": s["free_paid"],
         "users_delta": f"+{new_users_24h} за 24ч" if new_users_24h else None,
         "revenue_delta": f"+{day_rub}₽ за 24ч" if day_rub else None,
+        "active_delta": None,
+        "stock_delta": None,
         "stock_alert": bool(low_stock),
     })
 
@@ -313,7 +458,7 @@ async def api_admin_stats(request):
 async def on_startup(app: web.Application):
     await db.init_db()
     await store.load_from_db()
-    import bot as bot_module  # твой bot.py — без единой правки
+    import bot as bot_module
     app["bot_task"] = asyncio.create_task(bot_module.main())
     log.info("Бот запущен как фоновая задача, веб-сервер поднят.")
 
