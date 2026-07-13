@@ -965,7 +965,7 @@ async def _topup_invoice(target, bot, user_id, topup_id, amount, method, lang):
 
     if method in ("lava", "sbp", "card"):
         try:
-            _iid, pay_url = await create_lava_invoice(topup_id, amount, title)
+            _iid, pay_url = await create_lava_invoice(topup_id, amount, title, kind="topup")
         except Exception as e:
             log.exception("lava topup error: %s", e)
             await target.answer(err)
@@ -1043,7 +1043,7 @@ async def check_topup_lava(call: CallbackQuery, bot: Bot, state: FSMContext):
     lang = await _lang(call.from_user.id)
     topup_id = int(call.data.split(":", 1)[1])
     try:
-        paid = await check_lava_invoice(topup_id)
+        paid = await check_lava_invoice(topup_id, kind="topup")
     except Exception as e:
         log.exception("lava topup check error: %s", e)
         await call.answer(_tt(lang, "Не удалось проверить, попробуй ещё раз.", "Check failed, try again."), show_alert=True)
