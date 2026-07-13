@@ -423,6 +423,28 @@
   .onb-gold .onboard-eyebrow { color: #fde68a; }
   .onb-pink .onboard-eyebrow { color: #f9a8d4; }
   @keyframes onbSpin { to { transform: rotate(360deg); } }
+
+  /* CONNECT GUIDE (in-app instructions, onboarding-styled) */
+  .guide-overlay { position: fixed; inset: 0; z-index: 850; background: var(--bg); display: none; flex-direction: column; opacity: 0; transition: opacity .28s ease; }
+  .guide-overlay.show { display: flex; opacity: 1; }
+  .guide-topbar { position: relative; z-index: 2; display: flex; align-items: center; justify-content: space-between; padding: calc(env(safe-area-inset-top) + 14px) 16px 6px; }
+  .guide-title { font-size: 18px; font-weight: 800; letter-spacing: -0.3px; }
+  .guide-device-tabs { display: flex; gap: 8px; padding: 14px 16px 14px; overflow-x: auto; scrollbar-width: none; }
+  .guide-device-tabs::-webkit-scrollbar { display: none; }
+  .guide-device-tab { flex-shrink: 0; display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; padding: 9px 15px; border-radius: 100px; background: var(--card); border: 1.5px solid var(--border); color: var(--dim); cursor: pointer; transition: border-color .15s, color .15s, box-shadow .15s; }
+  .guide-device-tab svg { width: 15px; height: 15px; }
+  .guide-device-tab.active { border-color: var(--accent); color: var(--text); box-shadow: var(--selected-glow); }
+  .guide-content { flex: 1; overflow-y: auto; padding: 4px 16px calc(env(safe-area-inset-bottom) + 24px); }
+  .guide-apps { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+  .guide-app-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; font-family: var(--mono); padding: 6px 12px; border-radius: 100px; background: var(--surface); border: 1px solid var(--border); color: var(--dim); }
+  .guide-step { display: flex; gap: 12px; margin-bottom: 18px; }
+  .guide-step-num { flex-shrink: 0; width: 28px; height: 28px; border-radius: 9px; background: rgba(124,58,237,0.16); color: var(--accent2); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px; font-family: var(--mono); }
+  .guide-step-text { font-size: 13.5px; color: var(--dim); line-height: 1.55; padding-top: 3px; }
+  .guide-step-text b { color: var(--text); }
+  .guide-note { display: flex; gap: 10px; align-items: flex-start; background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-top: 4px; }
+  .guide-note svg { color: var(--accent2); flex-shrink: 0; margin-top: 1px; }
+  .guide-note-text { font-size: 12.5px; color: var(--dim); line-height: 1.5; }
+  .guide-note-text b { color: var(--text); }
 </style>
 </head>
 <body>
@@ -468,6 +490,7 @@
   <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><circle cx="7.5" cy="6.5" r="1"/><circle cx="7.5" cy="17.5" r="1"/></symbol>
   <symbol id="i-tag" viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle cx="7" cy="7" r="1.5" fill="currentColor"/></symbol>
   <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 2v13M8 11l4 4 4-4"/><path d="M3 17v2a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
 </svg>
 
 <!-- ═══════ SHOP ═══════ -->
@@ -557,11 +580,11 @@
   </div>
 
   <div class="quick-grid" style="margin-top:4px;">
-    <div class="quick-item" onclick="openBotCommand('howto')">
+    <div class="quick-item" onclick="showConnectGuide()">
       <div class="quick-icon ic-cyan"><svg class="icon" style="width:18px;height:18px;"><use href="#i-book"/></svg></div>
       <div><div class="quick-title">Как подключиться</div><div class="quick-sub">Инструкция для всех платформ</div></div>
     </div>
-    <div class="quick-item" onclick="openBotCommand('support')">
+    <div class="quick-item" onclick="openSupport()">
       <div class="quick-icon ic-pink"><svg class="icon" style="width:18px;height:18px;"><use href="#i-headset"/></svg></div>
       <div><div class="quick-title">Поддержка</div><div class="quick-sub">Чат с командой</div></div>
     </div>
@@ -695,11 +718,11 @@
       <div class="quick-icon ic-orange"><svg class="icon" style="width:18px;height:18px;"><use href="#i-zap"/></svg></div>
       <div><div class="quick-title">Оплата СБП</div><div class="quick-sub">Быстрое пополнение</div></div>
     </div>
-    <div class="quick-item" onclick="openBotCommand('howto')">
+    <div class="quick-item" onclick="showConnectGuide()">
       <div class="quick-icon ic-cyan"><svg class="icon" style="width:18px;height:18px;"><use href="#i-book"/></svg></div>
       <div><div class="quick-title">Как подключиться</div><div class="quick-sub">Инструкция по настройке</div></div>
     </div>
-    <div class="quick-item" onclick="openBotCommand('support')">
+    <div class="quick-item" onclick="openSupport()">
       <div class="quick-icon ic-pink"><svg class="icon" style="width:18px;height:18px;"><use href="#i-headset"/></svg></div>
       <div><div class="quick-title">Поддержка</div><div class="quick-sub">Чат с командой</div></div>
     </div>
@@ -840,6 +863,16 @@
 
 <div class="toast" id="toast"></div>
 
+<!-- CONNECT GUIDE -->
+<div class="guide-overlay" id="guideOverlay">
+  <div class="guide-topbar">
+    <div class="guide-title">Как подключиться</div>
+    <div class="icon-btn" onclick="hideConnectGuide()"><svg class="icon"><use href="#i-x"/></svg></div>
+  </div>
+  <div class="guide-device-tabs" id="guideDeviceTabs"></div>
+  <div class="guide-content" id="guideContent"></div>
+</div>
+
 <!-- ONBOARDING -->
 <div class="onboard" id="onboard">
   <div class="onboard-ambient" id="onboardAmbient"></div>
@@ -911,6 +944,7 @@
 const CONFIG = {
   // ← ЗАМЕНИ на @username твоего бота (без @)
   BOT_USERNAME: 'one_clickvpn_bot',
+  SUPPORT_USERNAME: 'oneclickvpnsupport',
   trialDays: 3,
   topupPresets: [100, 300, 500, 1000],
   primePrices: { month: 890, year: 2490 },
@@ -1086,6 +1120,103 @@ function openBotCommand(command) {
 // Триал — открывает бота с командой trial
 function handleTrial() {
   openBotCommand('trial');
+}
+
+// Поддержка — сразу открывает чат с саппортом, без прохода через бота
+function openSupport() {
+  const url = `https://t.me/${CONFIG.SUPPORT_USERNAME}`;
+  if (tg?.openTelegramLink) {
+    tg.openTelegramLink(url);
+  } else {
+    window.open(url, '_blank');
+  }
+  tg?.HapticFeedback?.selectionChanged();
+}
+
+// ══════════════════════ ГИД ПОДКЛЮЧЕНИЯ (в стиле онбординга) ══════════════════════
+const CONNECT_GUIDE = {
+  ios: {
+    label: 'iOS', icon: 'i-devices',
+    apps: ['WireGuard — App Store'],
+    steps: [
+      'Установи приложение <b>WireGuard</b> из App Store.',
+      'Оформи подписку в 1ClickVPN — бот пришлёт файл конфигурации и QR-код в чат.',
+      'Открой WireGuard → значок «+» → <b>«Создать из QR-кода»</b> и наведи камеру на код из бота (или импортируй файл .conf).',
+      'Дай туннелю любое имя и нажми «Разрешить», чтобы добавить VPN-конфигурацию.',
+      'Включи тумблер рядом с туннелем — готово, ты подключён.',
+    ]
+  },
+  android: {
+    label: 'Android', icon: 'i-devices',
+    apps: ['WireGuard — Google Play'],
+    steps: [
+      'Установи приложение <b>WireGuard</b> из Google Play.',
+      'Оформи подписку в 1ClickVPN — бот пришлёт файл конфигурации и QR-код в чат.',
+      'Открой WireGuard → «+» внизу справа → <b>«Сканировать QR-код»</b> (или «Импортировать из файла»).',
+      'Сохрани туннель под любым именем.',
+      'Включи тумблер рядом с туннелем — подключение активно.',
+    ]
+  },
+  windows: {
+    label: 'Windows', icon: 'i-devices',
+    apps: ['WireGuard для Windows'],
+    steps: [
+      'Скачай и установи <b>WireGuard</b> с официального сайта wireguard.com.',
+      'Оформи подписку — бот пришлёт файл конфигурации <b>.conf</b> в чат.',
+      'Открой WireGuard → «Импорт туннеля из файла» → выбери скачанный .conf.',
+      'Нажми «Активировать» — соединение установится сразу.',
+    ]
+  },
+  mac: {
+    label: 'macOS', icon: 'i-devices',
+    apps: ['WireGuard — App Store'],
+    steps: [
+      'Установи приложение <b>WireGuard</b> из App Store.',
+      'Оформи подписку — бот пришлёт файл конфигурации в чат.',
+      'Открой WireGuard → «Импортировать туннели из файла» → выбери файл .conf.',
+      'Нажми переключатель рядом с туннелем, чтобы включить VPN.',
+    ]
+  },
+};
+let guideDevice = 'ios';
+
+function renderGuideDeviceTabs() {
+  const wrap = document.getElementById('guideDeviceTabs');
+  wrap.innerHTML = Object.entries(CONNECT_GUIDE).map(([key, d]) => `
+    <div class="guide-device-tab ${key === guideDevice ? 'active' : ''}" onclick="selectGuideDevice('${key}')">
+      <svg class="icon"><use href="#${d.icon}"/></svg>${d.label}
+    </div>`).join('');
+}
+
+function renderGuideContent() {
+  const d = CONNECT_GUIDE[guideDevice];
+  document.getElementById('guideContent').innerHTML = `
+    <div class="guide-apps">${d.apps.map(a => `<span class="guide-app-chip"><svg class="icon" style="width:12px;height:12px;"><use href="#i-shield"/></svg>${a}</span>`).join('')}</div>
+    ${d.steps.map((s, i) => `
+      <div class="guide-step">
+        <div class="guide-step-num">${i + 1}</div>
+        <div class="guide-step-text">${s}</div>
+      </div>`).join('')}
+    <div class="guide-note">
+      <svg class="icon" style="width:18px;height:18px;"><use href="#i-headset"/></svg>
+      <div class="guide-note-text">Не получается подключиться? Напиши в <b>поддержку</b> — поможем разобраться за пару минут.</div>
+    </div>`;
+}
+
+function showConnectGuide() {
+  renderGuideDeviceTabs();
+  renderGuideContent();
+  document.getElementById('guideOverlay').classList.add('show');
+  tg?.HapticFeedback?.impactOccurred('light');
+}
+function hideConnectGuide() {
+  document.getElementById('guideOverlay').classList.remove('show');
+}
+function selectGuideDevice(key) {
+  guideDevice = key;
+  renderGuideDeviceTabs();
+  renderGuideContent();
+  tg?.HapticFeedback?.selectionChanged();
 }
 
 // ══════════════════════ SHOP: тарифы / устройства / период ══════════════════════
