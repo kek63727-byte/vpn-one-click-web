@@ -55,34 +55,54 @@
   .theme-layer { position: absolute; inset: 0; opacity: 0; transition: opacity .5s ease; }
   .theme-layer.active { opacity: 1; }
   .theme-layer[data-screen="shop"] {
-    background:
+    background-image:
       radial-gradient(600px 420px at 88% -8%, rgba(124,58,237,0.30), transparent 62%),
       radial-gradient(520px 380px at -14% 20%, rgba(168,85,247,0.14), transparent 60%),
-      radial-gradient(640px 520px at 50% 105%, rgba(76,29,149,0.20), transparent 65%);
+      radial-gradient(640px 520px at 50% 105%, rgba(76,29,149,0.20), transparent 65%),
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20400%20820%27%3E%3Cg%20fill%3D%27none%27%20stroke%3D%27%23a855f7%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cg%20transform%3D%27translate%2830%2C70%29%20scale%282.3%29%27%20opacity%3D%270.3%27%20stroke-width%3D%271.3%27%3E%3Cpath%20d%3D%27M12%203l7%203v6c0%205-3%208.5-7%209-4-.5-7-4-7-9V6l7-3z%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%28300%2C40%29%20scale%281.7%29%27%20opacity%3D%270.26%27%20stroke-width%3D%271.4%27%3E%3Ccircle%20cx%3D%2712%27%20cy%3D%2712%27%20r%3D%279%27%2F%3E%3Cpath%20d%3D%27M3%2012h18M12%203c2.5%202.6%203.8%205.7%203.8%209s-1.3%206.4-3.8%209c-2.5-2.6-3.8-5.7-3.8-9S9.5%205.6%2012%203z%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%28340%2C230%29%20scale%281.5%29%27%20opacity%3D%270.3%27%20stroke-width%3D%271.6%27%3E%3Cpath%20d%3D%27M13%202%204%2014h6l-1%208%209-12h-6l1-8z%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%2840%2C300%29%20scale%281.2%29%27%20opacity%3D%270.22%27%20stroke-width%3D%271.6%27%3E%3Cpath%20d%3D%27M12%202l2.9%206.6%207.1.7-5.4%204.8%201.6%207-6.2-3.7-6.2%203.7%201.6-7L2%209.3l7.1-.7L12%202z%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%28300%2C420%29%20scale%281.9%29%27%20opacity%3D%270.18%27%20stroke-width%3D%271.3%27%3E%3Cpath%20d%3D%27M4.5%208.5L8%203h8l3.5%205.5L12%2021%204.5%208.5z%27%2F%3E%3Cpath%20d%3D%27M4.5%208.5h15M8%203l-1.5%205.5L12%2021M16%203l1.5%205.5L12%2021%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%2850%2C520%29%20scale%281.6%29%27%20opacity%3D%270.2%27%20stroke-width%3D%271.5%27%3E%3Crect%20x%3D%272%27%20y%3D%274%27%20width%3D%2714%27%20height%3D%2710%27%20rx%3D%271.5%27%2F%3E%3Cpath%20d%3D%27M6%2020h6%27%2F%3E%3Crect%20x%3D%2718%27%20y%3D%279%27%20width%3D%274%27%20height%3D%279%27%20rx%3D%271%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%28320%2C620%29%20scale%281.4%29%27%20opacity%3D%270.16%27%20stroke-width%3D%271.4%27%3E%3Cpath%20d%3D%27M12%203l7%203v6c0%205-3%208.5-7%209-4-.5-7-4-7-9V6l7-3z%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%2860%2C720%29%20scale%281.3%29%27%20opacity%3D%270.16%27%20stroke-width%3D%271.4%27%3E%3Ccircle%20cx%3D%2712%27%20cy%3D%2712%27%20r%3D%279%27%2F%3E%3Cpath%20d%3D%27M3%2012h18M12%203c2.5%202.6%203.8%205.7%203.8%209s-1.3%206.4-3.8%209c-2.5-2.6-3.8-5.7-3.8-9S9.5%205.6%2012%203z%27%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    background-repeat: no-repeat, no-repeat, no-repeat, no-repeat;
+    background-size: auto, auto, auto, cover;
+    background-position: 0 0, 0 0, 0 0, center top;
   }
   .theme-layer[data-screen="connections"] {
-    background:
+    background-image:
       radial-gradient(600px 420px at 90% -8%, rgba(34,211,238,0.22), transparent 60%),
       radial-gradient(520px 380px at -12% 24%, rgba(124,58,237,0.16), transparent 62%),
-      radial-gradient(640px 520px at 50% 105%, rgba(8,145,178,0.18), transparent 65%);
+      radial-gradient(640px 520px at 50% 105%, rgba(8,145,178,0.18), transparent 65%),
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20400%20820%27%3E%3Cg%20fill%3D%27none%27%20stroke%3D%27%2322d3ee%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cg%20transform%3D%27translate%2840%2C80%29%20scale%282.2%29%27%20opacity%3D%270.32%27%20stroke-width%3D%271.4%27%3E%3Cpath%20d%3D%27M10%2013a5%205%200%200%200%207%200l2-2a5%205%200%200%200-7-7l-1%201%27%2F%3E%3Cpath%20d%3D%27M14%2011a5%205%200%200%200-7%200l-2%202a5%205%200%200%200%207%207l1-1%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%28310%2C60%29%20scale%281.7%29%27%20opacity%3D%270.26%27%20stroke-width%3D%271.4%27%3E%3Ccircle%20cx%3D%2712%27%20cy%3D%2712%27%20r%3D%279%27%2F%3E%3Cpath%20d%3D%27M3%2012h18M12%203c2.5%202.6%203.8%205.7%203.8%209s-1.3%206.4-3.8%209c-2.5-2.6-3.8-5.7-3.8-9S9.5%205.6%2012%203z%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%28330%2C240%29%20scale%281.7%29%27%20opacity%3D%270.26%27%20stroke-width%3D%271.5%27%3E%3Crect%20x%3D%272%27%20y%3D%274%27%20width%3D%2714%27%20height%3D%2710%27%20rx%3D%271.5%27%2F%3E%3Cpath%20d%3D%27M6%2020h6%27%2F%3E%3Crect%20x%3D%2718%27%20y%3D%279%27%20width%3D%274%27%20height%3D%279%27%20rx%3D%271%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%2850%2C320%29%20scale%281.3%29%27%20opacity%3D%270.22%27%20stroke-width%3D%271.5%27%3E%3Cpath%20d%3D%27M10%2013a5%205%200%200%200%207%200l2-2a5%205%200%200%200-7-7l-1%201%27%2F%3E%3Cpath%20d%3D%27M14%2011a5%205%200%200%200-7%200l-2%202a5%205%200%200%200%207%207l1-1%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%28300%2C430%29%20scale%281.9%29%27%20opacity%3D%270.18%27%20stroke-width%3D%271.3%27%3E%3Ccircle%20cx%3D%2712%27%20cy%3D%2712%27%20r%3D%279%27%2F%3E%3Cpath%20d%3D%27M3%2012h18M12%203c2.5%202.6%203.8%205.7%203.8%209s-1.3%206.4-3.8%209c-2.5-2.6-3.8-5.7-3.8-9S9.5%205.6%2012%203z%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%2860%2C540%29%20scale%281.5%29%27%20opacity%3D%270.2%27%20stroke-width%3D%271.5%27%3E%3Crect%20x%3D%272%27%20y%3D%274%27%20width%3D%2714%27%20height%3D%2710%27%20rx%3D%271.5%27%2F%3E%3Cpath%20d%3D%27M6%2020h6%27%2F%3E%3Crect%20x%3D%2718%27%20y%3D%279%27%20width%3D%274%27%20height%3D%279%27%20rx%3D%271%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%28320%2C640%29%20scale%281.3%29%27%20opacity%3D%270.16%27%20stroke-width%3D%271.4%27%3E%3Cpath%20d%3D%27M10%2013a5%205%200%200%200%207%200l2-2a5%205%200%200%200-7-7l-1%201%27%2F%3E%3Cpath%20d%3D%27M14%2011a5%205%200%200%200-7%200l-2%202a5%205%200%200%200%207%207l1-1%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%2850%2C730%29%20scale%281.2%29%27%20opacity%3D%270.16%27%20stroke-width%3D%271.4%27%3E%3Ccircle%20cx%3D%2712%27%20cy%3D%2712%27%20r%3D%279%27%2F%3E%3Cpath%20d%3D%27M3%2012h18M12%203c2.5%202.6%203.8%205.7%203.8%209s-1.3%206.4-3.8%209c-2.5-2.6-3.8-5.7-3.8-9S9.5%205.6%2012%203z%27%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    background-repeat: no-repeat, no-repeat, no-repeat, no-repeat;
+    background-size: auto, auto, auto, cover;
+    background-position: 0 0, 0 0, 0 0, center top;
   }
   .theme-layer[data-screen="prime"] {
-    background:
+    background-image:
       radial-gradient(640px 440px at 92% -10%, rgba(246,196,83,0.26), transparent 60%),
       radial-gradient(520px 400px at -14% 30%, rgba(124,58,237,0.20), transparent 62%),
-      radial-gradient(660px 540px at 50% 108%, rgba(120,53,15,0.16), transparent 65%);
+      radial-gradient(660px 540px at 50% 108%, rgba(120,53,15,0.16), transparent 65%),
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20400%20820%27%3E%3Cg%20fill%3D%27none%27%20stroke%3D%27%23f6c453%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cg%20transform%3D%27translate%2835%2C75%29%20scale%282.2%29%27%20opacity%3D%270.32%27%20stroke-width%3D%271.3%27%3E%3Cpath%20d%3D%27M3%208l4%204%205-7%205%207%204-4-2%2011H5L3%208z%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%28300%2C50%29%20scale%281.7%29%27%20opacity%3D%270.26%27%20stroke-width%3D%271.4%27%3E%3Cpath%20d%3D%27M4.5%208.5L8%203h8l3.5%205.5L12%2021%204.5%208.5z%27%2F%3E%3Cpath%20d%3D%27M4.5%208.5h15M8%203l-1.5%205.5L12%2021M16%203l1.5%205.5L12%2021%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%28340%2C240%29%20scale%281.4%29%27%20opacity%3D%270.28%27%20stroke-width%3D%271.6%27%3E%3Cpath%20d%3D%27M12%202l2.9%206.6%207.1.7-5.4%204.8%201.6%207-6.2-3.7-6.2%203.7%201.6-7L2%209.3l7.1-.7L12%202z%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%2840%2C310%29%20scale%281.5%29%27%20opacity%3D%270.22%27%20stroke-width%3D%271.5%27%3E%3Crect%20x%3D%273%27%20y%3D%279%27%20width%3D%2718%27%20height%3D%274%27%20rx%3D%271%27%2F%3E%3Crect%20x%3D%275%27%20y%3D%2713%27%20width%3D%2714%27%20height%3D%278%27%20rx%3D%271%27%2F%3E%3Cpath%20d%3D%27M12%209v12%27%2F%3E%3Cpath%20d%3D%27M12%209C9%209%207.5%207.5%207.5%206a2.5%202.5%200%200%201%205%200c0%20.7-.2%201.4-.5%202M12%209c3%200%204.5-1.5%204.5-3a2.5%202.5%200%200%200-5%200c0%20.7.2%201.4.5%202%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%28300%2C430%29%20scale%281.6%29%27%20opacity%3D%270.18%27%20stroke-width%3D%271.4%27%3E%3Cpath%20d%3D%27M3%208l4%204%205-7%205%207%204-4-2%2011H5L3%208z%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%2860%2C530%29%20scale%281.2%29%27%20opacity%3D%270.2%27%20stroke-width%3D%271.6%27%3E%3Cpath%20d%3D%27M12%202l2.9%206.6%207.1.7-5.4%204.8%201.6%207-6.2-3.7-6.2%203.7%201.6-7L2%209.3l7.1-.7L12%202z%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%28320%2C640%29%20scale%281.5%29%27%20opacity%3D%270.16%27%20stroke-width%3D%271.3%27%3E%3Cpath%20d%3D%27M4.5%208.5L8%203h8l3.5%205.5L12%2021%204.5%208.5z%27%2F%3E%3Cpath%20d%3D%27M4.5%208.5h15M8%203l-1.5%205.5L12%2021M16%203l1.5%205.5L12%2021%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%2850%2C730%29%20scale%281.3%29%27%20opacity%3D%270.16%27%20stroke-width%3D%271.4%27%3E%3Crect%20x%3D%273%27%20y%3D%279%27%20width%3D%2718%27%20height%3D%274%27%20rx%3D%271%27%2F%3E%3Crect%20x%3D%275%27%20y%3D%2713%27%20width%3D%2714%27%20height%3D%278%27%20rx%3D%271%27%2F%3E%3Cpath%20d%3D%27M12%209v12%27%2F%3E%3Cpath%20d%3D%27M12%209C9%209%207.5%207.5%207.5%206a2.5%202.5%200%200%201%205%200c0%20.7-.2%201.4-.5%202M12%209c3%200%204.5-1.5%204.5-3a2.5%202.5%200%200%200-5%200c0%20.7.2%201.4.5%202%27%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    background-repeat: no-repeat, no-repeat, no-repeat, no-repeat;
+    background-size: auto, auto, auto, cover;
+    background-position: 0 0, 0 0, 0 0, center top;
   }
   .theme-layer[data-screen="profile"] {
-    background:
+    background-image:
       radial-gradient(600px 420px at 88% -8%, rgba(236,72,153,0.20), transparent 60%),
       radial-gradient(520px 380px at -12% 22%, rgba(124,58,237,0.18), transparent 62%),
-      radial-gradient(640px 520px at 50% 105%, rgba(76,29,149,0.18), transparent 65%);
+      radial-gradient(640px 520px at 50% 105%, rgba(76,29,149,0.18), transparent 65%),
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20400%20820%27%3E%3Cg%20fill%3D%27none%27%20stroke%3D%27%23ec4899%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cg%20transform%3D%27translate%2835%2C75%29%20scale%282.2%29%27%20opacity%3D%270.3%27%20stroke-width%3D%271.3%27%3E%3Ccircle%20cx%3D%2712%27%20cy%3D%278%27%20r%3D%273.5%27%2F%3E%3Cpath%20d%3D%27M5%2020c1.5-4%204-6%207-6s5.5%202%207%206%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%28300%2C50%29%20scale%281.7%29%27%20opacity%3D%270.26%27%20stroke-width%3D%271.4%27%3E%3Crect%20x%3D%273%27%20y%3D%276%27%20width%3D%2718%27%20height%3D%2713%27%20rx%3D%272.5%27%2F%3E%3Cpath%20d%3D%27M3%2010h18%27%2F%3E%3Ccircle%20cx%3D%2716.5%27%20cy%3D%2714.2%27%20r%3D%271.1%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%28340%2C240%29%20scale%281.4%29%27%20opacity%3D%270.26%27%20stroke-width%3D%271.5%27%3E%3Crect%20x%3D%273%27%20y%3D%279%27%20width%3D%2718%27%20height%3D%274%27%20rx%3D%271%27%2F%3E%3Crect%20x%3D%275%27%20y%3D%2713%27%20width%3D%2714%27%20height%3D%278%27%20rx%3D%271%27%2F%3E%3Cpath%20d%3D%27M12%209v12%27%2F%3E%3Cpath%20d%3D%27M12%209C9%209%207.5%207.5%207.5%206a2.5%202.5%200%200%201%205%200c0%20.7-.2%201.4-.5%202M12%209c3%200%204.5-1.5%204.5-3a2.5%202.5%200%200%200-5%200c0%20.7.2%201.4.5%202%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%2840%2C310%29%20scale%281.5%29%27%20opacity%3D%270.22%27%20stroke-width%3D%271.5%27%3E%3Ccircle%20cx%3D%279%27%20cy%3D%278%27%20r%3D%273.3%27%2F%3E%3Cpath%20d%3D%27M3%2020c1.3-3.6%203.6-5.4%206-5.4s4.7%201.8%206%205.4%27%2F%3E%3Cpath%20d%3D%27M18%208v6M15%2011h6%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%28300%2C430%29%20scale%281.7%29%27%20opacity%3D%270.18%27%20stroke-width%3D%271.4%27%3E%3Crect%20x%3D%273%27%20y%3D%276%27%20width%3D%2718%27%20height%3D%2713%27%20rx%3D%272.5%27%2F%3E%3Cpath%20d%3D%27M3%2010h18%27%2F%3E%3Ccircle%20cx%3D%2716.5%27%20cy%3D%2714.2%27%20r%3D%271.1%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%2860%2C540%29%20scale%281.3%29%27%20opacity%3D%270.2%27%20stroke-width%3D%271.4%27%3E%3Ccircle%20cx%3D%2712%27%20cy%3D%278%27%20r%3D%273.5%27%2F%3E%3Cpath%20d%3D%27M5%2020c1.5-4%204-6%207-6s5.5%202%207%206%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%28320%2C640%29%20scale%281.4%29%27%20opacity%3D%270.16%27%20stroke-width%3D%271.4%27%3E%3Ccircle%20cx%3D%279%27%20cy%3D%278%27%20r%3D%273.3%27%2F%3E%3Cpath%20d%3D%27M3%2020c1.3-3.6%203.6-5.4%206-5.4s4.7%201.8%206%205.4%27%2F%3E%3Cpath%20d%3D%27M18%208v6M15%2011h6%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%2850%2C730%29%20scale%281.3%29%27%20opacity%3D%270.16%27%20stroke-width%3D%271.4%27%3E%3Crect%20x%3D%273%27%20y%3D%279%27%20width%3D%2718%27%20height%3D%274%27%20rx%3D%271%27%2F%3E%3Crect%20x%3D%275%27%20y%3D%2713%27%20width%3D%2714%27%20height%3D%278%27%20rx%3D%271%27%2F%3E%3Cpath%20d%3D%27M12%209v12%27%2F%3E%3Cpath%20d%3D%27M12%209C9%209%207.5%207.5%207.5%206a2.5%202.5%200%200%201%205%200c0%20.7-.2%201.4-.5%202M12%209c3%200%204.5-1.5%204.5-3a2.5%202.5%200%200%200-5%200c0%20.7.2%201.4.5%202%27%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    background-repeat: no-repeat, no-repeat, no-repeat, no-repeat;
+    background-size: auto, auto, auto, cover;
+    background-position: 0 0, 0 0, 0 0, center top;
   }
   .theme-layer[data-screen="admin"] {
-    background:
+    background-image:
       radial-gradient(600px 420px at 88% -8%, rgba(239,68,68,0.22), transparent 60%),
       radial-gradient(520px 380px at -12% 22%, rgba(124,58,237,0.18), transparent 62%),
-      radial-gradient(640px 520px at 50% 105%, rgba(127,29,29,0.20), transparent 65%);
+      radial-gradient(640px 520px at 50% 105%, rgba(127,29,29,0.20), transparent 65%),
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20400%20820%27%3E%3Cg%20fill%3D%27none%27%20stroke%3D%27%23ef4444%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cg%20transform%3D%27translate%2830%2C75%29%20scale%282.1%29%27%20opacity%3D%270.32%27%20stroke-width%3D%271.3%27%3E%3Cpath%20d%3D%27M14.7%206.3a1%201%200%200%200%200%201.4l1.6%201.6a1%201%200%200%200%201.4%200l3.77-3.77a6%206%200%200%201-7.94%207.94l-6.91%206.91a2.12%202.12%200%200%201-3-3l6.91-6.91a6%206%200%200%201%207.94-7.94l-3.76%203.76z%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%28300%2C50%29%20scale%281.7%29%27%20opacity%3D%270.26%27%20stroke-width%3D%271.4%27%3E%3Crect%20x%3D%273%27%20y%3D%273%27%20width%3D%2718%27%20height%3D%277%27%20rx%3D%272%27%2F%3E%3Crect%20x%3D%273%27%20y%3D%2714%27%20width%3D%2718%27%20height%3D%277%27%20rx%3D%272%27%2F%3E%3Ccircle%20cx%3D%277.5%27%20cy%3D%276.5%27%20r%3D%271%27%2F%3E%3Ccircle%20cx%3D%277.5%27%20cy%3D%2717.5%27%20r%3D%271%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%28340%2C240%29%20scale%281.4%29%27%20opacity%3D%270.26%27%20stroke-width%3D%271.4%27%3E%3Cpath%20d%3D%27M12%203l7%203v6c0%205-3%208.5-7%209-4-.5-7-4-7-9V6l7-3z%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%2840%2C310%29%20scale%281.3%29%27%20opacity%3D%270.22%27%20stroke-width%3D%271.6%27%3E%3Ccircle%20cx%3D%2712%27%20cy%3D%2712%27%20r%3D%279%27%2F%3E%3Cpath%20d%3D%27M4.93%204.93l14.14%2014.14%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%28300%2C430%29%20scale%281.7%29%27%20opacity%3D%270.18%27%20stroke-width%3D%271.4%27%3E%3Crect%20x%3D%273%27%20y%3D%273%27%20width%3D%2718%27%20height%3D%277%27%20rx%3D%272%27%2F%3E%3Crect%20x%3D%273%27%20y%3D%2714%27%20width%3D%2718%27%20height%3D%277%27%20rx%3D%272%27%2F%3E%3Ccircle%20cx%3D%277.5%27%20cy%3D%276.5%27%20r%3D%271%27%2F%3E%3Ccircle%20cx%3D%277.5%27%20cy%3D%2717.5%27%20r%3D%271%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%2860%2C540%29%20scale%281.4%29%27%20opacity%3D%270.2%27%20stroke-width%3D%271.5%27%3E%3Cpath%20d%3D%27M18%2020V10M12%2020V4M6%2020v-6%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%28320%2C640%29%20scale%281.4%29%27%20opacity%3D%270.16%27%20stroke-width%3D%271.3%27%3E%3Cpath%20d%3D%27M14.7%206.3a1%201%200%200%200%200%201.4l1.6%201.6a1%201%200%200%200%201.4%200l3.77-3.77a6%206%200%200%201-7.94%207.94l-6.91%206.91a2.12%202.12%200%200%201-3-3l6.91-6.91a6%206%200%200%201%207.94-7.94l-3.76%203.76z%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%2850%2C730%29%20scale%281.2%29%27%20opacity%3D%270.16%27%20stroke-width%3D%271.4%27%3E%3Cpath%20d%3D%27M12%203l7%203v6c0%205-3%208.5-7%209-4-.5-7-4-7-9V6l7-3z%27%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    background-repeat: no-repeat, no-repeat, no-repeat, no-repeat;
+    background-size: auto, auto, auto, cover;
+    background-position: 0 0, 0 0, 0 0, center top;
   }
 
   .app-shell { position: relative; z-index: 2; }
@@ -300,6 +320,22 @@
   .conn-status { font-size: 10px; font-weight: 700; font-family: var(--mono); padding: 3px 9px; border-radius: 100px; text-transform: uppercase; letter-spacing: 0.4px; flex-shrink: 0; }
   .conn-status.active { background: rgba(34,197,94,0.12); color: var(--green); border: 1px solid rgba(34,197,94,0.25); }
   .conn-status.expired { background: rgba(239,68,68,0.1); color: var(--red); border: 1px solid rgba(239,68,68,0.22); }
+  .conn-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
+  .conn-dl-btn { display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; font-family: var(--mono); color: var(--accent2); background: rgba(124,58,237,0.14); border: 1px solid rgba(168,85,247,0.3); padding: 5px 10px; border-radius: 100px; cursor: pointer; white-space: nowrap; }
+  .conn-dl-btn:active { transform: scale(0.94); }
+  .conn-dl-btn svg { width: 12px; height: 12px; }
+  .conn-dl-btn.loading { opacity: 0.6; pointer-events: none; }
+
+  /* CONFIG MODAL */
+  .config-modal-sheet { max-height: 82vh; overflow-y: auto; }
+  .config-block { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; }
+  .config-block-label { font-size: 11px; font-weight: 700; font-family: var(--mono); color: var(--muted); letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 8px; }
+  .config-textarea { width: 100%; max-height: 160px; overflow-y: auto; background: transparent; border: none; color: var(--dim); font-size: 11.5px; font-family: var(--mono); line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
+  .config-qr-wrap { display: flex; align-items: center; justify-content: center; background: #fff; border-radius: 14px; padding: 14px; margin-bottom: 14px; }
+  .config-qr-wrap img, .config-qr-wrap canvas { display: block; width: 190px; height: 190px; }
+  .config-actions-row { display: flex; gap: 8px; }
+  .config-actions-row .modal-pay-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .config-actions-row .modal-pay-btn.secondary { background: var(--card); border: 1.5px solid var(--border); color: var(--text); }
 
   .empty-state { padding: 36px 24px; text-align: center; }
   .empty-icon { width: 64px; height: 64px; border-radius: 18px; margin: 0 auto 16px; background: rgba(99,102,241,0.1); color: var(--accent2); display: flex; align-items: center; justify-content: center; }
@@ -827,6 +863,29 @@
   </div>
 </div>
 
+<!-- CONFIG MODAL -->
+<div class="modal-overlay" id="configModal">
+  <div class="modal-sheet config-modal-sheet">
+    <div class="modal-title" id="configModalTitle">Конфигурация</div>
+    <div class="config-qr-wrap" id="configQrWrap" style="display:none;"></div>
+    <div class="config-block" id="configTextBlock" style="display:none;">
+      <div class="config-block-label">Конфиг</div>
+      <div class="config-textarea" id="configTextArea"></div>
+    </div>
+    <div class="config-actions-row">
+      <button class="modal-pay-btn" id="configDownloadBtn" onclick="downloadConfigFile()">
+        <svg class="icon" style="width:16px;height:16px;"><use href="#i-download"/></svg>
+        Скачать файл
+      </button>
+      <button class="modal-pay-btn secondary" onclick="copyConfigText()">
+        <svg class="icon" style="width:16px;height:16px;"><use href="#i-copy"/></svg>
+        Копировать
+      </button>
+    </div>
+    <button class="modal-cancel" onclick="hideConfigModal()">Закрыть</button>
+  </div>
+</div>
+
 <div class="loading-overlay" id="loadingOverlay">
   <div class="spinner"></div>
   <div class="loading-text">Создаём ссылку на оплату…</div>
@@ -835,7 +894,11 @@
 <div class="success-overlay" id="successOverlay">
   <div class="success-icon"><svg class="icon" style="width:36px;height:36px;color:#22c55e;"><use href="#i-check"/></svg></div>
   <div class="success-title">Оплата прошла!</div>
-  <div class="success-sub">Конфигурация уже отправлена тебе в бот. Просто вернись в Telegram.</div>
+  <div class="success-sub" id="successSub">Конфигурация уже отправлена тебе в бот. Можешь также скачать её прямо здесь.</div>
+  <button class="empty-btn" id="successDownloadBtn" style="display:none;" onclick="downloadConfigFile()">
+    <svg class="icon" style="width:16px;height:16px;"><use href="#i-download"/></svg>
+    Скачать конфиг
+  </button>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -1039,9 +1102,10 @@ function renderConnections() {
   }
 
   empty.style.display = 'none';
-  list.innerHTML = configs.map(cfg => {
+  list.innerHTML = configs.map((cfg, i) => {
     const isActive = cfg.status === 'sold';
     const exp = cfg.expires_at || '—';
+    const cfgId = cfg.id ?? cfg.config_id ?? i;
     return `
       <div class="conn-item">
         <div class="conn-icon ${isActive ? '' : 'off'}">
@@ -1051,9 +1115,122 @@ function renderConnections() {
           <div class="conn-name">${cfg.region}</div>
           <div class="conn-meta">до ${exp} · ${cfg.plan || 'standard'}</div>
         </div>
-        <span class="conn-status ${isActive ? 'active' : 'expired'}">${isActive ? 'active' : 'expired'}</span>
+        <div class="conn-side">
+          <span class="conn-status ${isActive ? 'active' : 'expired'}">${isActive ? 'active' : 'expired'}</span>
+          ${isActive ? `<button class="conn-dl-btn" onclick="openConfigModal('${cfgId}', this)">
+            <svg class="icon"><use href="#i-download"/></svg>Конфиг
+          </button>` : ''}
+        </div>
       </div>`;
   }).join('');
+}
+
+// ══════════════════════ КОНФИГ: скачивание прямо в мини-аппе ══════════════════════
+let currentConfig = null; // { text, filename }
+
+async function openConfigModal(configId, btnEl) {
+  if (!tg?.initData) {
+    showToast('Открой мини-апп через бот');
+    return;
+  }
+  btnEl?.classList.add('loading');
+  try {
+    const resp = await fetch('/get_config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config_id: configId, init_data: tg.initData }),
+    });
+    const data = await resp.json();
+    btnEl?.classList.remove('loading');
+
+    if (data.error) {
+      showToast('❌ Не удалось получить конфиг');
+      return;
+    }
+
+    let text = data.config_text || '';
+    // Если бэкенд отдал прямую ссылку на файл конфига — подтягиваем содержимое
+    if (!text && data.config_url) {
+      try {
+        const r2 = await fetch(data.config_url);
+        text = await r2.text();
+      } catch (e) {
+        // Не смогли получить текст — просто откроем ссылку
+        tg.openLink(data.config_url);
+        return;
+      }
+    }
+    if (!text) {
+      showToast('❌ Конфиг пуст');
+      return;
+    }
+
+    currentConfig = {
+      text,
+      filename: data.filename || `1clickvpn_${configId}.conf`,
+    };
+    showConfigModal(data.title || 'Твой конфиг');
+  } catch (err) {
+    btnEl?.classList.remove('loading');
+    showToast('❌ ' + err.message);
+  }
+}
+
+function showConfigModal(title) {
+  document.getElementById('configModalTitle').textContent = title;
+
+  const qrWrap = document.getElementById('configQrWrap');
+  const textBlock = document.getElementById('configTextBlock');
+  const textArea = document.getElementById('configTextArea');
+
+  textArea.textContent = currentConfig.text;
+  textBlock.style.display = '';
+
+  // QR имеет смысл только для компактных однострочных конфигов (vless://, ss:// и т.п.)
+  if (currentConfig.text.length <= 1200) {
+    qrWrap.style.display = '';
+    qrWrap.innerHTML = `<img alt="QR" src="https://api.qrserver.com/v1/create-qr-code/?size=190x190&margin=4&data=${encodeURIComponent(currentConfig.text)}">`;
+  } else {
+    qrWrap.style.display = 'none';
+    qrWrap.innerHTML = '';
+  }
+
+  document.getElementById('configModal').classList.add('show');
+  tg?.HapticFeedback?.impactOccurred('light');
+}
+
+function hideConfigModal() {
+  document.getElementById('configModal').classList.remove('show');
+}
+
+function downloadConfigFile() {
+  if (!currentConfig) return;
+  try {
+    const blob = new Blob([currentConfig.text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = currentConfig.filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    showToast('✅ Файл сохранён');
+    tg?.HapticFeedback?.notificationOccurred('success');
+  } catch (err) {
+    showToast('❌ Не удалось скачать. Скопируй текст вручную');
+  }
+}
+
+async function copyConfigText() {
+  if (!currentConfig) return;
+  try {
+    await navigator.clipboard.writeText(currentConfig.text);
+    showToast('✅ Конфиг скопирован');
+    tg?.HapticFeedback?.notificationOccurred('success');
+  } catch {
+    showToast('Выдели текст конфига вручную');
+  }
 }
 
 // ══════════════════════ NAVIGATION ══════════════════════
@@ -1320,9 +1497,9 @@ async function handlePay() {
     }
 
     if (data.paid) {
-      // Оплачено бонусным балансом
+      // Оплачено бонусным балансом — бэкенд может сразу отдать конфиг
       pendingOrder = null;
-      showSuccess();
+      showSuccess(data.config);
       return;
     }
 
@@ -1355,17 +1532,31 @@ async function checkPendingPayment() {
     const d = await r.json();
     if (d.status === 'paid') {
       pendingOrder = null;
-      showSuccess();
+      showSuccess(d.config);
       return true;
     }
   } catch (e) {}
   return false;
 }
 
-function showSuccess() {
+function showSuccess(configData) {
+  const dlBtn = document.getElementById('successDownloadBtn');
+  const sub = document.getElementById('successSub');
+
+  let text = configData?.config_text || '';
+  if (text) {
+    currentConfig = { text, filename: configData.filename || 'ureshi_1clickvpn.conf' };
+    dlBtn.style.display = '';
+    sub.textContent = 'Конфигурация готова — можешь скачать её прямо здесь или в подключениях.';
+  } else {
+    dlBtn.style.display = 'none';
+    sub.textContent = 'Конфигурация уже отправлена тебе в бот. Также найдёшь её во вкладке «Подключения».';
+  }
+
   document.getElementById('successOverlay').classList.add('show');
   tg?.HapticFeedback?.notificationOccurred('success');
-  setTimeout(() => tg?.close?.(), 3000);
+  // Автозакрытие мини-аппа отключено, если можно сразу скачать конфиг здесь
+  if (!text) setTimeout(() => tg?.close?.(), 3000);
 }
 
 document.addEventListener('visibilitychange', () => {
