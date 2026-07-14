@@ -426,6 +426,30 @@
   .modal-pay-btn:active { transform: scale(0.98); }
   .modal-cancel { width: 100%; padding: 14px; background: transparent; border: none; color: var(--muted); font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 6px; }
 
+  /* HOWTO MODAL (styled like onboarding) */
+  .howto-overlay { position: fixed; inset: 0; z-index: 900; background: #050307; display: none; flex-direction: column; opacity: 0; transition: opacity .32s ease; }
+  .howto-overlay.show { display: flex; opacity: 1; }
+  .howto-topbar { position: relative; z-index: 3; display: flex; align-items: center; justify-content: space-between; padding: calc(env(safe-area-inset-top) + 14px) 18px 0; }
+  .howto-close { font-size: 12px; font-weight: 700; font-family: var(--mono); color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); padding: 6px 13px; border-radius: 100px; cursor: pointer; }
+  .howto-close:active { transform: scale(0.95); }
+  .howto-ambient { position: absolute; inset: 0; background: radial-gradient(600px 500px at 50% -5%, rgba(34,211,238,0.24), transparent 58%); pointer-events: none; }
+  .howto-tabs { position: relative; z-index: 3; display: flex; gap: 6px; padding: 18px 18px 0; }
+  .howto-tab { flex: 1; padding: 10px 4px; border-radius: 12px; background: var(--surface); border: 1.5px solid var(--border); text-align: center; font-size: 12px; font-weight: 700; color: var(--dim); cursor: pointer; }
+  .howto-tab.active { border-color: var(--border-h); box-shadow: var(--selected-glow); color: var(--text); background: var(--card); }
+  .howto-body { position: relative; z-index: 2; flex: 1; min-height: 0; overflow-y: auto; padding: 24px 22px 10px; }
+  .howto-icon-wrap { width: 84px; height: 84px; border-radius: 24px; margin: 0 auto 22px; background: linear-gradient(150deg,#122430,#0e0a16); border: 1px solid rgba(34,211,238,0.35); box-shadow: 0 0 48px -10px rgba(34,211,238,0.5); display: flex; align-items: center; justify-content: center; }
+  .howto-icon-wrap svg { width: 38px; height: 38px; stroke: #67e8f9; }
+  .howto-title { font-size: 21px; font-weight: 900; letter-spacing: -0.4px; text-align: center; margin-bottom: 6px; }
+  .howto-sub { font-size: 13px; color: var(--muted); text-align: center; line-height: 1.55; margin: 0 auto 22px; max-width: 300px; }
+  .howto-steps { display: flex; flex-direction: column; gap: 12px; }
+  .howto-step { display: flex; gap: 12px; align-items: flex-start; background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 13px 14px; }
+  .howto-step-num { flex-shrink: 0; width: 26px; height: 26px; border-radius: 8px; background: rgba(34,211,238,0.14); color: var(--cyan); font-family: var(--mono); font-weight: 700; font-size: 12.5px; display: flex; align-items: center; justify-content: center; }
+  .howto-step-text { font-size: 13px; color: var(--dim); line-height: 1.55; padding-top: 3px; }
+  .howto-step-text b { color: var(--text); font-weight: 600; }
+  .howto-bottom { position: relative; z-index: 2; padding: 14px 20px calc(env(safe-area-inset-bottom) + 18px); }
+  .howto-cta { width: 100%; height: 54px; border-radius: 16px; border: none; background: linear-gradient(135deg, #0891b2, #22d3ee); color: #04222b; font-size: 15px; font-weight: 800; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 10px 30px -10px rgba(34,211,238,0.55); }
+  .howto-cta:active { transform: scale(0.98); }
+
   /* ONBOARDING */
   .onboard { position: fixed; inset: 0; z-index: 900; background: #050307; display: none; flex-direction: column; opacity: 0; transition: opacity .32s ease; }
   .onboard.show { display: flex; opacity: 1; }
@@ -504,6 +528,10 @@
   <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><circle cx="7.5" cy="6.5" r="1"/><circle cx="7.5" cy="17.5" r="1"/></symbol>
   <symbol id="i-tag" viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle cx="7" cy="7" r="1.5" fill="currentColor"/></symbol>
   <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 2v13M8 11l4 4 4-4"/><path d="M3 17v2a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2"/></symbol>
+  <symbol id="i-apple" viewBox="0 0 24 24"><path d="M16.365 1.43c0 1.14-.416 2.06-1.246 2.76-.84.72-1.75 1.14-2.73 1.06-.14-1.12.33-2.06 1.16-2.79.85-.76 1.83-1.15 2.816-1.03zM20.5 17.34c-.5 1.15-.74 1.66-1.39 2.68-.9 1.42-2.17 3.2-3.75 3.21-1.4.02-1.76-.92-3.66-.91-1.9.01-2.3.93-3.71.91-1.58-.02-2.78-1.61-3.68-3.03C1.86 17.4 1.32 13.7 2.6 11.28c.9-1.7 2.52-2.78 4.28-2.8 1.44-.02 2.8.98 3.68.98.88 0 2.53-1.21 4.26-1.03.73.03 2.77.29 4.08 2.2-.1.06-2.44 1.42-2.41 4.24.03 3.37 2.96 4.49 3.01 4.47z"/></symbol>
+  <symbol id="i-android" viewBox="0 0 24 24"><path d="M6.4 15.6h11.2v3.2a1.6 1.6 0 0 1-1.6 1.6H8a1.6 1.6 0 0 1-1.6-1.6v-3.2z"/><path d="M6.4 8.8h11.2v6.8H6.4z"/><path d="M8.8 4l1.6 2.4M15.2 4l-1.6 2.4M9 11v3M15 11v3M4.8 9.6v4M19.2 9.6v4"/></symbol>
+  <symbol id="i-windows" viewBox="0 0 24 24"><path d="M3 5.5l7.5-1v7H3v-6zM11.5 4.3L21 3v9.2h-9.5V4.3zM3 12.5h7.5v7l-7.5-1v-6zM11.5 12.5H21V21l-9.5-1.3v-7.2z"/></symbol>
+  <symbol id="i-mac" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="1.5"/><path d="M8 20h8M12 17v3"/></symbol>
 </svg>
 
 <!-- ═══════ SHOP ═══════ -->
@@ -593,11 +621,11 @@
   </div>
 
   <div class="quick-grid" style="margin-top:4px;">
-    <div class="quick-item" onclick="openBotCommand('howto')">
+    <div class="quick-item" onclick="showHowtoModal()">
       <div class="quick-icon ic-cyan"><svg class="icon" style="width:18px;height:18px;"><use href="#i-book"/></svg></div>
       <div><div class="quick-title">Как подключиться</div><div class="quick-sub">Инструкция для всех платформ</div></div>
     </div>
-    <div class="quick-item" onclick="openBotCommand('support')">
+    <div class="quick-item" onclick="openSupportChat()">
       <div class="quick-icon ic-pink"><svg class="icon" style="width:18px;height:18px;"><use href="#i-headset"/></svg></div>
       <div><div class="quick-title">Поддержка</div><div class="quick-sub">Чат с командой</div></div>
     </div>
@@ -731,11 +759,11 @@
       <div class="quick-icon ic-orange"><svg class="icon" style="width:18px;height:18px;"><use href="#i-zap"/></svg></div>
       <div><div class="quick-title">Оплата СБП</div><div class="quick-sub">Быстрое пополнение</div></div>
     </div>
-    <div class="quick-item" onclick="openBotCommand('howto')">
+    <div class="quick-item" onclick="showHowtoModal()">
       <div class="quick-icon ic-cyan"><svg class="icon" style="width:18px;height:18px;"><use href="#i-book"/></svg></div>
       <div><div class="quick-title">Как подключиться</div><div class="quick-sub">Инструкция по настройке</div></div>
     </div>
-    <div class="quick-item" onclick="openBotCommand('support')">
+    <div class="quick-item" onclick="openSupportChat()">
       <div class="quick-icon ic-pink"><svg class="icon" style="width:18px;height:18px;"><use href="#i-headset"/></svg></div>
       <div><div class="quick-title">Поддержка</div><div class="quick-sub">Чат с командой</div></div>
     </div>
@@ -903,6 +931,23 @@
 
 <div class="toast" id="toast"></div>
 
+<!-- HOWTO MODAL (in-app, onboarding style) -->
+<div class="howto-overlay" id="howtoOverlay">
+  <div class="howto-ambient"></div>
+  <div class="howto-topbar">
+    <div style="font-size:11px;font-weight:700;font-family:var(--mono);letter-spacing:2px;text-transform:uppercase;color:#67e8f9;">Инструкция</div>
+    <div class="howto-close" onclick="hideHowtoModal()">Закрыть</div>
+  </div>
+  <div class="howto-tabs" id="howtoTabs"></div>
+  <div class="howto-body" id="howtoBody"></div>
+  <div class="howto-bottom">
+    <button class="howto-cta" onclick="hideHowtoModal(); showScreen('connections');">
+      <svg class="icon" style="width:17px;height:17px;"><use href="#i-link"/></svg>
+      Перейти к подключениям
+    </button>
+  </div>
+</div>
+
 <!-- ONBOARDING -->
 <div class="onboard" id="onboard">
   <div class="onboard-ambient" id="onboardAmbient"></div>
@@ -974,6 +1019,7 @@
 const CONFIG = {
   // ← ЗАМЕНИ на @username твоего бота (без @)
   BOT_USERNAME: 'one_clickvpn_bot',
+  SUPPORT_USERNAME: 'oneclickvpnsupport',
   trialDays: 3,
   topupPresets: [100, 300, 500, 1000],
   primePrices: { month: 890, year: 2490 },
@@ -1260,9 +1306,119 @@ function openBotCommand(command) {
   showToast('Открываю бот…');
 }
 
+// Открыть чат поддержки напрямую (отдельный аккаунт/бот поддержки, не через основной бот)
+function openSupportChat() {
+  const url = `https://t.me/${CONFIG.SUPPORT_USERNAME}`;
+  if (tg) {
+    tg.openTelegramLink(url);
+    tg.HapticFeedback?.selectionChanged();
+  } else {
+    window.open(url, '_blank');
+  }
+  showToast('Открываю поддержку…');
+}
+
 // Триал — открывает бота с командой trial
 function handleTrial() {
   openBotCommand('trial');
+}
+
+// ══════════════════════ КАК ПОДКЛЮЧИТЬСЯ (в мини-аппе, стиль онбординга) ══════════════════════
+const HOWTO_CONTENT = {
+  ios: {
+    icon: 'apple',
+    title: 'Подключение на iOS',
+    sub: 'Установи WireGuard или V2Box из App Store и импортируй конфиг за пару шагов.',
+    steps: [
+      'Купи подписку в разделе <b>«Магазин»</b> — конфиг придёт в бот и появится во вкладке «Подключения».',
+      'Установи приложение <b>WireGuard</b> (или V2Box для VLESS) из App Store.',
+      'Открой «Подключения» → нажми <b>«Конфиг»</b> у нужного устройства.',
+      'В приложении WireGuard нажми «+» → «Создать из QR-кода» и отсканируй QR из мини-аппа, либо импортируй скачанный файл.',
+      'Включи переключатель подключения — готово, VPN активен.',
+    ]
+  },
+  android: {
+    icon: 'android',
+    title: 'Подключение на Android',
+    sub: 'Установи WireGuard или v2rayNG из Google Play и добавь конфиг сканированием QR.',
+    steps: [
+      'Купи подписку в разделе <b>«Магазин»</b> — конфиг придёт в бот и появится во вкладке «Подключения».',
+      'Установи <b>WireGuard</b> (или v2rayNG для VLESS) из Google Play.',
+      'Открой «Подключения» → нажми <b>«Конфиг»</b> у нужного устройства.',
+      'В приложении нажми «+» → «Сканировать QR-код» и наведи камеру на QR из мини-аппа, либо импортируй файл конфига.',
+      'Нажми на добавленный туннель, чтобы подключиться.',
+    ]
+  },
+  windows: {
+    icon: 'windows',
+    title: 'Подключение на Windows',
+    sub: 'Скачай клиент WireGuard для Windows и импортируй файл конфигурации.',
+    steps: [
+      'Купи подписку в разделе <b>«Магазин»</b> — конфиг придёт в бот и появится во вкладке «Подключения».',
+      'Скачай и установи <b>WireGuard для Windows</b> с официального сайта wireguard.com.',
+      'Открой «Подключения» → нажми <b>«Конфиг»</b> → «Скачать файл».',
+      'В приложении WireGuard нажми «Импортировать туннель(-и) из файла» и выбери скачанный .conf файл.',
+      'Нажми «Активировать» — соединение установлено.',
+    ]
+  },
+  mac: {
+    icon: 'mac',
+    title: 'Подключение на macOS',
+    sub: 'Установи WireGuard из Mac App Store и добавь свой конфиг.',
+    steps: [
+      'Купи подписку в разделе <b>«Магазин»</b> — конфиг придёт в бот и появится во вкладке «Подключения».',
+      'Установи <b>WireGuard</b> из Mac App Store.',
+      'Открой «Подключения» → нажми <b>«Конфиг»</b> → «Скачать файл».',
+      'В приложении WireGuard нажми «Импортировать туннель(-и) из файла» и выбери скачанный .conf файл.',
+      'Нажми «Активировать» в списке туннелей — VPN подключён.',
+    ]
+  },
+};
+
+let howtoActiveTab = 'ios';
+
+function renderHowtoTabs() {
+  const wrap = document.getElementById('howtoTabs');
+  wrap.innerHTML = Object.keys(HOWTO_CONTENT).map(key => {
+    const label = { ios: 'iOS', android: 'Android', windows: 'Windows', mac: 'macOS' }[key];
+    return `<div class="howto-tab ${key === howtoActiveTab ? 'active' : ''}" onclick="selectHowtoTab('${key}')">${label}</div>`;
+  }).join('');
+}
+
+function renderHowtoBody() {
+  const c = HOWTO_CONTENT[howtoActiveTab];
+  const body = document.getElementById('howtoBody');
+  body.innerHTML = `
+    <div class="howto-icon-wrap"><svg class="icon"><use href="#i-${c.icon}"/></svg></div>
+    <div class="howto-title">${c.title}</div>
+    <div class="howto-sub">${c.sub}</div>
+    <div class="howto-steps">
+      ${c.steps.map((s, i) => `
+        <div class="howto-step">
+          <div class="howto-step-num">${i + 1}</div>
+          <div class="howto-step-text">${s}</div>
+        </div>`).join('')}
+    </div>
+  `;
+  body.scrollTop = 0;
+}
+
+function selectHowtoTab(key) {
+  howtoActiveTab = key;
+  renderHowtoTabs();
+  renderHowtoBody();
+  tg?.HapticFeedback?.selectionChanged();
+}
+
+function showHowtoModal() {
+  renderHowtoTabs();
+  renderHowtoBody();
+  document.getElementById('howtoOverlay').classList.add('show');
+  tg?.HapticFeedback?.impactOccurred('light');
+}
+
+function hideHowtoModal() {
+  document.getElementById('howtoOverlay').classList.remove('show');
 }
 
 // ══════════════════════ SHOP: тарифы / устройства / период ══════════════════════
@@ -1475,8 +1631,8 @@ async function handlePay() {
     document.getElementById('loadingOverlay').classList.remove('show');
 
     if (data.error) {
-      // Отдельно обрабатываем нехватку баланса: вместо «нет серверов» сразу
-      // открываем модалку пополнения с предзаполненной нужной суммой —
+      // Отдельно обрабатываем нехватку баланса: вместо «нет серверов»
+      // сразу открываем модалку пополнения с предзаполненной нужной суммой —
       // так понятнее, что делать, даже если формально сервера тоже не было.
       if (data.error === 'need_topup') {
         const need = Math.max(50, Math.round((data.to_pay || 0) - (data.balance || 0)));
