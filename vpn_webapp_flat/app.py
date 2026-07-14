@@ -229,9 +229,20 @@ async def api_create_payment(request):
     spent = await db.total_spent(user_id)
     discount = full * pay.loyalty_percent_for(spent) // 100
     to_pay = full - discount
+    balance = await db.get_balance(user_id)
 
     reserved = await db.reserve_purchase(region, devices, user_id)
     if reserved is None:
+        # Серверов не хватает. Если у пользователя ЕЩЁ и баланса не хватает на
+        # покупку — сообщаем именно об этом («пополни баланс»), а не про то,
+        # что «нет серверов» — так понятнее, что делать дальше. Если баланс
+        # достаточен, а серверов всё равно нет — это реально дефицит стока.
+        if balance < to_pay:
+            return web.json_response({
+                "error": "need_topup",
+                "to_pay": to_pay,
+                "balance": balance,
+            }, status=409)
         return web.json_response({"error": "no_stock"}, status=409)
 
     config_ids = [c["id"] for c in reserved]
