@@ -519,9 +519,10 @@ async def cb_subactloc(call: CallbackQuery, bot: Bot):
         exp_dt = datetime.fromisoformat((cfg.get("expires_at") or "").replace("Z", ""))
     except Exception:
         exp_dt = datetime.utcnow()
-    await _send_config(call.message, cfg, exp_dt, 1, 1, lang)
-    await call.message.answer(_tt(lang, "📖 Как подключить — выбери платформу:",
-                                  "📖 How to connect — choose a platform:"), reply_markup=howto_kb(lang))
+       await _send_config(call.message, cfg, exp_dt, 1, 1, lang)
+    if (cfg.get("config_type") or "wireguard") == "wireguard":
+        await call.message.answer(_tt(lang, "📖 Как подключить — выбери платформу:",
+                                      "📖 How to connect — choose a platform:"), reply_markup=howto_kb(lang))
 
 
 # ============ FAQ ============
@@ -871,9 +872,10 @@ async def cb_trialloc(call: CallbackQuery, bot: Bot):
     if extra > 0:
         expires = await db.extend_config(cfg["id"], extra)
     await call.message.answer(_tt(lang, "🎁 <b>Пробный доступ активирован!</b>", "🎁 <b>Trial access activated!</b>"))
-    full = await db.get_config(cfg["id"])
+        full = await db.get_config(cfg["id"])
     await _send_config(call.message, full, expires, 1, 1, lang)
-    await call.message.answer(_tt(lang, "📖 Как подключить — выбери платформу:", "📖 How to connect — choose a platform:"), reply_markup=howto_kb(lang))
+    if (full.get("config_type") or "wireguard") == "wireguard":
+        await call.message.answer(_tt(lang, "📖 Как подключить — выбери платформу:", "📖 How to connect — choose a platform:"), reply_markup=howto_kb(lang))
     # уведомляем админов: кто и где взял пробный доступ
     from datetime import datetime
     u = await db.get_user(call.from_user.id) or {}
@@ -1794,15 +1796,19 @@ async def _fulfill(target: Message, user_id: int, order: dict, bot: Bot, paid_mo
             await _reward_referrer(user_id, order["full_rub"], bot)
             await _sales_log(bot, user_id, order)
         return
-    if lang == "en":
+        if lang == "en":
         await target.answer(f"🎉 <b>Done!</b> Sending your {'config' if total == 1 else f'{total} configs'} 👇")
     else:
         await target.answer(f"🎉 <b>Готово!</b> Высылаю {'конфиг' if total == 1 else f'{total} конфига'} 👇")
+    any_wg = False
     for idx, cid in enumerate(config_ids, start=1):
         expires = await db.mark_sold(cid, user_id, order["plan"], order["period"])
         cfg = await db.get_config(cid)
+        if (cfg.get("config_type") or "wireguard") == "wireguard":
+            any_wg = True
         await _send_config(target, cfg, expires, idx, total, lang)
-    await target.answer(_tt(lang, "📖 Как подключить — выбери платформу:", "📖 How to connect — choose a platform:"), reply_markup=howto_kb(lang))
+    if any_wg:
+        await target.answer(_tt(lang, "📖 Как подключить — выбери платформу:", "📖 How to connect — choose a platform:"), reply_markup=howto_kb(lang))
     applied, _region = await db.apply_bonus(user_id)
     if applied:
         await target.answer(_tt(lang, f"🎁 К твоей подписке добавлено <b>{applied}</b> бонусных дней!",
