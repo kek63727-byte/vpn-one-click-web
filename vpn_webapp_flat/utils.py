@@ -1,30 +1,76 @@
-"""Генерация QR-кода из текста конфига."""
+"""
+Добавить в utils.py рядом с is_valid_wg()
+"""
 
-import io
-
-import qrcode
-
-
-def make_qr_png(text: str) -> bytes:
-    qr = qrcode.QRCode(border=2, box_size=8)
-    qr.add_data(text)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white")
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
+import json
 
 
-def is_valid_wg(text: str) -> bool:
-    """Грубая проверка, что это реальный WireGuard-конфиг, а не мусор."""
-    if not text:
+def is_valid_vless(text: str) -> bool:
+    """
+    Проверяет, что строка — валидный happ/xray VLESS JSON конфиг.
+    Минимальные критерии:
+      - валидный JSON
+      - есть outbounds с хотя бы одним protocol == 'vless'
+      - у каждого vless outbound есть address и id пользователя
+    """
+    try:
+        data = json.loads(text)
+    except Exception:
         return False
-    t = text.replace("\r", "")
-    low = t.lower()
-    if "[interface]" not in low or "[peer]" not in low:
+
+    outbounds = data.get("outbounds")
+    if not isinstance(outbounds, list) or not outbounds:
         return False
-    # должны быть ключи и эндпоинт
-    has_private = "privatekey" in low
-    has_public = "publickey" in low
-    has_endpoint = "endpoint" in low
-    return has_private and has_public and has_endpoint
+
+    vless_found = False
+    for ob in outbounds:
+        if ob.get("protocol") != "vless":
+            continue
+        try:
+            vnext = ob["settings"]["vnext"]
+            addr = vnext[0]["address"]
+            uid = vnext[0]["users"][0]["id"]
+            if addr and uid:
+                vless_found = True
+        except (KeyError, IndexError, TypeError):
+            continue
+
+    return vless_found
+
+
+def vless_region_from_json(text: str) -> str:
+    """
+    Извлекает название региона из поля 'remarks' VLESS JSON.
+    Например: '🇩🇪 Германия | Прямое' → 'Германия'
+    Если remarks нет — возвращает 'VLESS'.
+    """
+    try:
+        data = json.loads(text)
+        remarks = data.get("remarks", "").strip()
+        if not remarks:
+            return "VLESS"
+        # Убираем эмодзи-флаги и лишнее после '|'
+        if "|" in remarks:
+            remarks = remarks.split("|")[0].strip()
+        # Убираем эмодзи (символы вне ASCII + пробелы в начале)
+        cleaned = "".join(c for c in remarks if ord(c) < 0x1F600 or ord(c) > 0x1FFFF).strip()
+        # Убираем оставшиеся unicode-флаги (regional indicator symbols U+1F1E0–U+1F1FF)
+        cleaned = "".join(
+            c for c in cleaned
+            if not (0x1F1E0 <= ord(c) <= 0x1F1FF)
+        ).strip()
+        return cleaned if cleaned else remarks
+    except Exception:
+        return "VLESS"
+
+
+def vless_server_count(text: str) -> int:
+    """Сколько VLESS серверов в конфиге (для информации при добавлении)."""
+    try:
+        data = json.loads(text)
+        return sum(
+            1 for ob in data.get("outbounds", [])
+            if ob.get("protocol") == "vless"
+        )
+    except Exception:
+        return 0
