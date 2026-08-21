@@ -858,34 +858,69 @@ async def cb_trialloc(call: CallbackQuery, bot: Bot):
     lang = await _lang(call.from_user.id)
     region = call.data.split(":", 1)[1]
     user = await db.get_user(call.from_user.id)
+
     if user and user["trial_used"]:
-        await call.answer(_tt(lang, "Пробный период уже использован.", "Trial already used."), show_alert=True)
+        await call.answer(
+            _tt(lang, "Пробный период уже использован.", "Trial already used."),
+            show_alert=True
+        )
         return
+
     reserved = await db.reserve_trial(region, call.from_user.id)
     if not reserved:
-        await call.answer(_tt(lang, "😔 Сервер закончился, выбери другой.", "😔 Out of stock, pick another."), show_alert=True)
+        await call.answer(
+            _tt(lang, "😔 Сервер закончился, выбери другой.", "😔 Out of stock, pick another."),
+            show_alert=True
+        )
         return
+
     await call.answer()
     await db.mark_trial_used(call.from_user.id)
+
     cfg = reserved[0]
     expires = await db.mark_sold(cfg["id"], call.from_user.id, "standard", "trial")
+
     # A/B: вариант может удлинять триал (extra_days к базовым TRIAL_DAYS)
     extra = int(ab.variant_params(call.from_user.id).get("extra_days", 0) or 0)
     if extra > 0:
         expires = await db.extend_config(cfg["id"], extra)
-      await call.message.answer(_tt(lang, "🎁 <b>Пробный доступ активирован!</b>", "🎁 <b>Trial access activated!</b>"))
+
+    await call.message.answer(
+        _tt(
+            lang,
+            "🎁 <b>Пробный доступ активирован!</b>",
+            "🎁 <b>Trial access activated!</b>"
+        )
+    )
+
     full = await db.get_config(cfg["id"])
     await _send_config(call.message, full, expires, 1, 1, lang)
+
     if (full.get("config_type") or "wireguard") == "wireguard":
-        await call.message.answer(_tt(lang, "📖 Как подключить — выбери платформу:", "📖 How to connect — choose a platform:"), reply_markup=howto_kb(lang))
+        await call.message.answer(
+            _tt(
+                lang,
+                "📖 Как подключить — выбери платформу:",
+                "📖 How to connect — choose a platform:"
+            ),
+            reply_markup=howto_kb(lang)
+        )
+
     # уведомляем админов: кто и где взял пробный доступ
     from datetime import datetime
+
     u = await db.get_user(call.from_user.id) or {}
-    await _notify_admins(bot, texts.admin_trial_alert(
-        region, call.from_user.id,
-        username=u.get("username"), full_name=u.get("full_name"),
-        when=datetime.now().strftime("%d.%m %H:%M"),
-    ))
+
+    await _notify_admins(
+        bot,
+        texts.admin_trial_alert(
+            region,
+            call.from_user.id,
+            username=u.get("username"),
+            full_name=u.get("full_name"),
+            when=datetime.now().strftime("%d.%m %H:%M"),
+        )
+    )
 
 
 # ============ БАЛАНС ============
