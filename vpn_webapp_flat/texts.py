@@ -112,7 +112,7 @@ def welcome(lang="ru"):
         return (
             f"⚡️ <b>{BRAND}</b> · <i>premium VPN</i>\n{LINE}\n"
             "The internet the way it should feel — borderless, instant, private. 🌍\n\n"
-            "🛡 Enterprise-grade encryption (WireGuard)\n"
+            "🛡 Enterprise-grade encryption (WireGuard & VLESS)\n"
             "⚡️ Up to 250 Mbps · zero throttling\n"
             "🌐 Hand-picked server network across dozens of countries\n"
             "🤫 Strict no-logs policy · no ads · no compromises\n"
@@ -126,7 +126,7 @@ def welcome(lang="ru"):
     return (
         f"⚡️ <b>{BRAND}</b> · <i>premium VPN</i>\n{LINE}\n"
         "Интернет таким, каким он должен быть — без границ, мгновенный, приватный. 🌍\n\n"
-        "🛡 Шифрование корпоративного уровня (WireGuard)\n"
+        "🛡 Шифрование корпоративного уровня (WireGuard и VLESS)\n"
         "⚡️ До 250 Мбит/с · без ограничений скорости\n"
         "🌐 Отобранная сеть серверов в десятках стран\n"
         "🤫 Строгая политика no-logs · без рекламы · без компромиссов\n"
@@ -144,7 +144,8 @@ def about(lang="ru"):
         return (
             f"ℹ️ <b>About {BRAND}</b>\n{LINE}\n"
             "We built a VPN we'd want to use ourselves — fast, quiet, and uncompromising.\n\n"
-            "🛡 <b>WireGuard</b> — the modern protocol behind the fastest, most secure tunnels.\n"
+            "🛡 <b>WireGuard & VLESS</b> — modern protocols behind the fastest, most secure tunnels. "
+            "We hand-pick the best one for your setup.\n"
             "🌐 A curated network, not a crowd — servers chosen for speed and stability.\n"
             "🤫 <b>Zero logs.</b> We don't collect, store or sell anything about you.\n"
             "🔒 Bypass blocks, mask your real IP, encrypt every byte.\n"
@@ -155,7 +156,8 @@ def about(lang="ru"):
     return (
         f"ℹ️ <b>О сервисе {BRAND}</b>\n{LINE}\n"
         "Мы сделали VPN, которым хотим пользоваться сами — быстрый, тихий, без компромиссов.\n\n"
-        "🛡 <b>WireGuard</b> — современный протокол самых быстрых и защищённых туннелей.\n"
+        "🛡 <b>WireGuard и VLESS</b> — современные протоколы самых быстрых и защищённых туннелей. "
+        "Подбираем оптимальный вариант под твою задачу.\n"
         "🌐 Отобранная сеть, а не толпа — серверы под скорость и стабильность.\n"
         "🤫 <b>Ноль логов.</b> Мы не собираем, не храним и не продаём данные о тебе.\n"
         "🔒 Обходим блокировки, скрываем реальный IP, шифруем каждый байт.\n"
@@ -240,14 +242,14 @@ def support(lang="ru"):
             "💬 <b>Technical support</b>\n" + LINE + "\n"
             "If the VPN won't connect or is slow:\n"
             "1️⃣ Switch the server location\n"
-            "2️⃣ Reconnect the tunnel in WireGuard\n\n"
+            "2️⃣ Reopen the app you received (WireGuard or happ) and reconnect\n\n"
             f"Still stuck? Message us: {SUPPORT_USERNAME}"
         )
     return (
         "💬 <b>Техническая поддержка</b>\n" + LINE + "\n"
         "Если VPN не подключается или работает медленно:\n"
         "1️⃣ Смени локацию сервера\n"
-        "2️⃣ Переподключи туннель в WireGuard\n\n"
+        "2️⃣ Переподключи туннель в приложении, которое получил при выдаче (WireGuard или happ)\n\n"
         f"Не помогло? Пиши нам: {SUPPORT_USERNAME}"
     )
 
@@ -478,9 +480,11 @@ def winback_msg(region, code, lang="ru"):
 def howto_intro(lang="ru"):
     if _is_en(lang):
         return ("📖 <b>How to connect</b>\n" + LINE + "\n"
-                "We use the free <b>WireGuard</b> app.\nPick your platform 👇")
+                "Depending on what you bought, you'll use either the free <b>WireGuard</b> app "
+                "(.conf file) or <b>happ</b> (VLESS import).\nPick your platform 👇")
     return ("📖 <b>Как подключиться</b>\n" + LINE + "\n"
-            "Мы используем бесплатное приложение <b>WireGuard</b>.\nВыбери свою платформу 👇")
+            "В зависимости от того, что ты купил, используется либо бесплатное приложение "
+            "<b>WireGuard</b> (.conf файл), либо <b>happ</b> (импорт VLESS).\nВыбери свою платформу 👇")
 
 
 def faq(lang="ru"):
@@ -573,11 +577,67 @@ _GUIDES_EN = {
         "4️⃣ Allow VPN and turn the tunnel on\n\n✅ Done!"),
 }
 
+_HAPP_GUIDES_RU = {
+    "windows": ("💻 <b>happ (VLESS) · Windows</b>\n" + LINE + "\n"
+        "1️⃣ Скачай happ: <a href=\"https://happ.su\">happ.su</a>\n"
+        "2️⃣ Открой приложение → нажми <b>➕</b>\n"
+        "3️⃣ Скопируй присланный конфиг (тапни на него) и выбери <b>Import from clipboard</b>\n"
+        "4️⃣ Нажми <b>Подключить</b>\n\n✅ Готово — VPN работает!"),
+    "macos": ("💻 <b>happ (VLESS) · macOS</b>\n" + LINE + "\n"
+        "1️⃣ Установи happ из <b>App Store</b> или на <a href=\"https://happ.su\">happ.su</a>\n"
+        "2️⃣ Открой приложение → нажми <b>➕</b>\n"
+        "3️⃣ Скопируй присланный конфиг и выбери <b>Import from clipboard</b>\n"
+        "4️⃣ Нажми <b>Подключить</b>\n\n✅ Готово!"),
+    "android": ("📱 <b>happ (VLESS) · Android</b>\n" + LINE + "\n"
+        "1️⃣ Установи happ из <b>Google Play</b>\n"
+        "2️⃣ Открой приложение → нажми <b>➕</b> в правом верхнем углу\n"
+        "3️⃣ Скопируй присланный конфиг (тапни на него) и выбери <b>Import from clipboard</b>\n"
+        "4️⃣ Включи переключатель подключения\n\n✅ Готово!"),
+    "iphone": ("🍏 <b>happ (VLESS) · iPhone / iPad</b>\n" + LINE + "\n"
+        "1️⃣ Установи happ из <b>App Store</b>\n"
+        "2️⃣ Открой приложение → нажми <b>➕</b> в правом верхнем углу\n"
+        "3️⃣ Скопируй присланный конфиг (тапни на него) и выбери <b>Import from clipboard</b>\n"
+        "4️⃣ Разреши VPN и включи подключение\n\n✅ Готово!"),
+}
 
-def guide(platform, lang="ru"):
-    table = _GUIDES_EN if _is_en(lang) else _GUIDES_RU
+_HAPP_GUIDES_EN = {
+    "windows": ("💻 <b>happ (VLESS) · Windows</b>\n" + LINE + "\n"
+        "1️⃣ Download happ: <a href=\"https://happ.su\">happ.su</a>\n"
+        "2️⃣ Open the app → tap <b>➕</b>\n"
+        "3️⃣ Copy the config you received (tap it) and choose <b>Import from clipboard</b>\n"
+        "4️⃣ Tap <b>Connect</b>\n\n✅ Done — VPN is on!"),
+    "macos": ("💻 <b>happ (VLESS) · macOS</b>\n" + LINE + "\n"
+        "1️⃣ Install happ from the <b>App Store</b> or at <a href=\"https://happ.su\">happ.su</a>\n"
+        "2️⃣ Open the app → tap <b>➕</b>\n"
+        "3️⃣ Copy the config you received and choose <b>Import from clipboard</b>\n"
+        "4️⃣ Tap <b>Connect</b>\n\n✅ Done!"),
+    "android": ("📱 <b>happ (VLESS) · Android</b>\n" + LINE + "\n"
+        "1️⃣ Install happ from <b>Google Play</b>\n"
+        "2️⃣ Open the app → tap <b>➕</b> top right\n"
+        "3️⃣ Copy the config you received (tap it) and choose <b>Import from clipboard</b>\n"
+        "4️⃣ Toggle the connection on\n\n✅ Done!"),
+    "iphone": ("🍏 <b>happ (VLESS) · iPhone / iPad</b>\n" + LINE + "\n"
+        "1️⃣ Install happ from the <b>App Store</b>\n"
+        "2️⃣ Open the app → tap <b>➕</b> top right\n"
+        "3️⃣ Copy the config you received (tap it) and choose <b>Import from clipboard</b>\n"
+        "4️⃣ Allow VPN and toggle the connection on\n\n✅ Done!"),
+}
+
+
+def guide(platform, lang="ru", protocol="wireguard"):
+    if protocol == "vless":
+        table = _HAPP_GUIDES_EN if _is_en(lang) else _HAPP_GUIDES_RU
+    else:
+        table = _GUIDES_EN if _is_en(lang) else _GUIDES_RU
     return table.get(platform, "Not found." if _is_en(lang) else "Инструкция не найдена.")
 
+
+def guide(platform, lang="ru", protocol="wireguard"):
+    if protocol == "vless":
+        table = _HAPP_GUIDES_EN if _is_en(lang) else _HAPP_GUIDES_RU
+    else:
+        table = _GUIDES_EN if _is_en(lang) else _GUIDES_RU
+    return table.get(platform, "Not found." if _is_en(lang) else "Инструкция не найдена.")
 
 def delivery_caption(region_flag, region, expires_str, idx, total, lang="ru"):
     if _is_en(lang):
