@@ -9,6 +9,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BufferedInputFile, CallbackQuery, Message, PreCheckoutQuery, ReplyKeyboardRemove
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+import html as _html
+from datetime import datetime
 
 import db
 import ab
@@ -1882,22 +1884,74 @@ async def _sales_log(bot: Bot, user_id: int, order: dict):
         pass
 
 
+# ============ ВЫДАЧА ============
+
+_VLESS_INLINE_LIMIT = 3500  # запас от лимита Telegram (4096) под HTML-экранирование
+
+
+def _vless_caption(region: str, expires, idx: int, total: int, lang: str) -> str:
+    return texts.delivery_caption(flag(region), texts.region_name(region, lang),
+                                   expires.strftime("%d.%m.%Y %H:%M UTC"), idx, total, lang)
+
+
+def _vless_howto(lang: str) -> str:
+    if lang == "en":
+        return ("📲 <b>Setup (happ app):</b>\n"
+                "1️⃣ Copy the JSON below\n"
+                "2️⃣ Open the <b>happ</b> app\n"
+                "3️⃣ Tap <b>+</b> → <b>Import from clipboard</b>")
+    return ("📲 <b>Настройка (приложение happ):</b>\n"
+            "1️⃣ Скопируй JSON ниже\n"
+            "2️⃣ Открой приложение <b>happ</b>\n"
+            "3️⃣ Нажми <b>+</b> → <b>Import from clipboard</b>")
+
+
+def _vless_fits_inline(text: str) -> bool:
+    return len(text) <= _VLESS_INLINE_LIMIT
+
+
 async def send_config_to(bot: Bot, user_id: int, cfg: dict, lang: str = "ru"):
     """Отправляет конфиг конкретному пользователю по user_id (для админских действий)."""
-    region = cfg["region"]
-    text = cfg["config_text"]
-    filename = f"{texts.region_slug(region)}_{cfg['id']}.conf"
     try:
         exp = datetime.fromisoformat((cfg.get("expires_at") or "").replace("Z", ""))
     except (ValueError, TypeError):
-        exp = now()
+        exp = db.now()
+    if (cfg.get("config_type") or "wireguard") == "vless":
+        await _send_vless_config_to(bot, user_id, cfg, exp, lang)
+    else:
+        await _send_wg_config_to(bot, user_id, cfg, exp, lang)
+
+
+async def _send_wg_config_to(bot: Bot, user_id: int, cfg: dict, exp, lang: str = "ru"):
+    region = cfg["region"]
+    text = cfg["config_text"]
+    filename = f"{texts.region_slug(region)}_{cfg['id']}.conf"
     caption = texts.delivery_caption(flag(region), texts.region_name(region, lang),
                                      exp.strftime("%d.%m.%Y %H:%M UTC"), 1, 1, lang)
     await bot.send_document(user_id, BufferedInputFile(text.encode(), filename=filename), caption=caption)
     await bot.send_photo(user_id, BufferedInputFile(make_qr_png(text), filename="qr.png"))
 
 
+async def _send_vless_config_to(bot: Bot, user_id: int, cfg: dict, exp, lang: str = "ru"):
+    region = cfg["region"]
+    text = cfg["config_text"]
+    caption = _vless_caption(region, exp, 1, 1, lang)
+    await bot.send_message(user_id, f"{caption}\n\n{_vless_howto(lang)}")
+    if _vless_fits_inline(text):
+        await bot.send_message(user_id, f"<code>{_html.escape(text)}</code>")
+    else:
+        filename = f"{texts.region_slug(region)}_{cfg['id']}.json"
+        await bot.send_document(user_id, BufferedInputFile(text.encode(), filename=filename))
+
+
 async def _send_config(target: Message, cfg: dict, expires, idx, total, lang="ru"):
+    if (cfg.get("config_type") or "wireguard") == "vless":
+        await _send_vless_config(target, cfg, expires, idx, total, lang)
+    else:
+        await _send_wg_config(target, cfg, expires, idx, total, lang)
+
+
+async def _send_wg_config(target: Message, cfg: dict, expires, idx, total, lang="ru"):
     region = cfg["region"]
     text = cfg["config_text"]
     filename = f"{texts.region_slug(region)}_{cfg['id']}.conf"
@@ -1906,6 +1960,17 @@ async def _send_config(target: Message, cfg: dict, expires, idx, total, lang="ru
     await target.answer_document(BufferedInputFile(text.encode(), filename=filename), caption=caption)
     await target.answer_photo(BufferedInputFile(make_qr_png(text), filename="qr.png"))
 
+
+async def _send_vless_config(target: Message, cfg: dict, expires, idx, total, lang="ru"):
+    region = cfg["region"]
+    text = cfg["config_text"]
+    caption = _vless_caption(region, expires, idx, total, lang)
+    await target.answer(f"{caption}\n\n{_vless_howto(lang)}")
+    if _vless_fits_inline(text):
+        await target.answer(f"<code>{_html.escape(text)}</code>")
+    else:
+        filename = f"{texts.region_slug(region)}_{cfg['id']}.json"
+        await target.answer_document(BufferedInputFile(text.encode(), filename=filename))
 
 # ============ МОИ ПОДКЛЮЧЕНИЯ ============
 
@@ -2147,9 +2212,9 @@ async def _do_replace(call: CallbackQuery, bot: Bot, config_id: int, region: str
 
     await call.answer(_tt(lang, "Готово! Выдаю новый конфиг.", "Done! Sending a new config."))
     try:
-        exp = datetime.fromisoformat(new["expires_at"]) if new.get("expires_at") else now()
+        exp = datetime.fromisoformat(new["expires_at"]) if new.get("expires_at") else db.now()
     except (ValueError, TypeError):
-        exp = now()
+        exp = db.now()
     await _edit(call, _tt(lang, "✅ <b>Конфиг заменён!</b> Срок действия сохранён.",
                           "✅ <b>Config replaced!</b> Your expiry date is kept."),
                 back_to_menu_kb(lang))
