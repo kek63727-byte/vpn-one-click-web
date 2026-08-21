@@ -1896,8 +1896,8 @@ _VLESS_INLINE_LIMIT = 3500  # запас от лимита Telegram (4096) по�
 
 
 def _vless_caption(region: str, expires, idx: int, total: int, lang: str) -> str:
-    return texts.delivery_caption(flag(region), texts.region_name(region, lang),
-                                   expires.strftime("%d.%m.%Y %H:%M UTC"), idx, total, lang)
+    return texts.vless_delivery_caption(flag(region), texts.region_name(region, lang),
+                                        expires.strftime("%d.%m.%Y %H:%M UTC"), idx, total, lang)
 
 
 def _vless_howto(lang: str) -> str:
