@@ -1818,38 +1818,76 @@ async def on_paid(message: Message, bot: Bot):
 
 async def _fulfill(target: Message, user_id: int, order: dict, bot: Bot, paid_money: bool, lang: str = "ru"):
     await db.set_order_status(order["id"], "paid")
+
     if order.get("discount", 0) > 0:
         await db.use_ref_balance(user_id, order["discount"])
+
     config_ids = [int(x) for x in order["config_ids"].split(",") if x]
     total = len(config_ids)
+
     # Слот-заказ (многоустройственный тариф): конфигов нет — выдаём подписку со слотами,
     # устройства клиент активирует по одному в «Мои подключения».
     if total == 0:
-        sub_id = await db.create_subscription(user_id, order["plan"], order["devices"], order["period"])
-        await target.answer(texts.sub_created(order["devices"], lang), reply_markup=main_menu_kb(lang))
+        sub_id = await db.create_subscription(
+            user_id,
+            order["plan"],
+            order["devices"],
+            order["period"]
+        )
+        await target.answer(
+            texts.sub_created(order["devices"], lang),
+            reply_markup=main_menu_kb(lang)
+        )
+
         if paid_money:
             if order.get("promo"):
                 await _consume_promo(order["promo"], user_id)
             await _reward_referrer(user_id, order["full_rub"], bot)
             await _sales_log(bot, user_id, order)
+
         return
-        if lang == "en":
-        await target.answer(f"🎉 <b>Done!</b> Sending your {'config' if total == 1 else f'{total} configs'} 👇")
+
+    if lang == "en":
+        await target.answer(
+            f"🎉 <b>Done!</b> Sending your {'config' if total == 1 else f'{total} configs'} 👇"
+        )
     else:
-        await target.answer(f"🎉 <b>Готово!</b> Высылаю {'конфиг' if total == 1 else f'{total} конфига'} 👇")
+        await target.answer(
+            f"🎉 <b>Готово!</b> Высылаю {'конфиг' if total == 1 else f'{total} конфига'} 👇"
+        )
+
     any_wg = False
+
     for idx, cid in enumerate(config_ids, start=1):
         expires = await db.mark_sold(cid, user_id, order["plan"], order["period"])
         cfg = await db.get_config(cid)
+
         if (cfg.get("config_type") or "wireguard") == "wireguard":
             any_wg = True
+
         await _send_config(target, cfg, expires, idx, total, lang)
+
     if any_wg:
-        await target.answer(_tt(lang, "📖 Как подключить — выбери платформу:", "📖 How to connect — choose a platform:"), reply_markup=howto_kb(lang))
+        await target.answer(
+            _tt(
+                lang,
+                "📖 Как подключить — выбери платформу:",
+                "📖 How to connect — choose a platform:"
+            ),
+            reply_markup=howto_kb(lang)
+        )
+
     applied, _region = await db.apply_bonus(user_id)
+
     if applied:
-        await target.answer(_tt(lang, f"🎁 К твоей подписке добавлено <b>{applied}</b> бонусных дней!",
-                                f"🎁 <b>{applied}</b> bonus days added to your subscription!"))
+        await target.answer(
+            _tt(
+                lang,
+                f"🎁 К твоей подписке добавлено <b>{applied}</b> бонусных дней!",
+                f"🎁 <b>{applied}</b> bonus days added to your subscription!"
+            )
+        )
+
     if paid_money:
         if order.get("promo"):
             await _consume_promo(order["promo"], user_id)
@@ -1860,32 +1898,50 @@ async def _fulfill(target: Message, user_id: int, order: dict, bot: Bot, paid_mo
 async def _reward_referrer(buyer_id: int, full_rub: int, bot: Bot):
     buyer = await db.get_user(buyer_id)
     ref_id = buyer and buyer.get("referred_by")
+
     if not ref_id:
         return
+
     rlang = await db.get_lang(ref_id)
     cashback = full_rub * REF_PERCENT // 100
+
     if cashback > 0:
         # 15% идёт на выводимый реферальный баланс (реальные деньги)
         await db.add_ref_cash(ref_id, cashback)
+
     await db.add_bonus_days(ref_id, REF_REWARD_DAYS)
     applied, region = await db.apply_bonus(ref_id)
     region_disp = texts.region_name(region, rlang)
+
     try:
         if rlang == "en":
             msg = ["🎉 Your friend topped up / bought!"]
+
             if cashback > 0:
                 msg.append(f"💰 +{cashback} ₽ to your withdrawable balance")
-            msg.append(f"🎁 +{applied} days to subscription ({region_disp})" if applied
-                       else f"🎁 +{REF_REWARD_DAYS} bonus days (applied on purchase)")
+
+            msg.append(
+                f"🎁 +{applied} days to subscription ({region_disp})"
+                if applied
+                else f"🎁 +{REF_REWARD_DAYS} bonus days (applied on purchase)"
+            )
         else:
             msg = ["🎉 Твой друг пополнил баланс / купил!"]
+
             if cashback > 0:
                 msg.append(f"💰 +{cashback} ₽ на выводимый баланс")
-            msg.append(f"🎁 +{applied} дней к подписке ({region_disp})" if applied
-                       else f"🎁 +{REF_REWARD_DAYS} бонусных дней (добавятся при покупке)")
+
+            msg.append(
+                f"🎁 +{applied} дней к подписке ({region_disp})"
+                if applied
+                else f"🎁 +{REF_REWARD_DAYS} бонусных дней (добавятся при покупке)"
+            )
+
         await bot.send_message(ref_id, "\n".join(msg))
+
     except Exception:
         pass
+
     await _check_ref_milestones(ref_id, rlang, bot)
 
 
@@ -1896,16 +1952,23 @@ async def _check_ref_milestones(ref_id: int, rlang: str, bot: Bot):
         invited = st.get("invited", 0)
         already = await db.get_ref_milestone(ref_id)
         highest = already
+
         for threshold, bonus in sorted(REF_MILESTONES):
             if invited >= threshold > already:
                 await db.add_ref_cash(ref_id, bonus)
                 highest = max(highest, threshold)
+
                 try:
-                    await bot.send_message(ref_id, texts.ref_milestone_msg(threshold, bonus, rlang))
+                    await bot.send_message(
+                        ref_id,
+                        texts.ref_milestone_msg(threshold, bonus, rlang)
+                    )
                 except Exception:
                     pass
+
         if highest > already:
             await db.set_ref_milestone(ref_id, highest)
+
     except Exception:
         pass
 
@@ -1913,16 +1976,22 @@ async def _check_ref_milestones(ref_id: int, rlang: str, bot: Bot):
 async def _sales_log(bot: Bot, user_id: int, order: dict):
     if not SALES_LOG_CHAT_ID:
         return
+
     try:
         p = PLANS.get(order["plan"], {})
         title = p.get("title", order["plan"])
         promo = f" · 🎟{order['promo']}" if order.get("promo") else ""
-        text = (f"💰 <b>Продажа</b>\n"
-                f"Тариф: {title} · {order['devices']} устр · {order['period']}\n"
-                f"Регион: {order['region']}\n"
-                f"Сумма: {order['rub']} ₽{promo}\n"
-                f"Покупатель: <code>{user_id}</code>")
+
+        text = (
+            f"💰 <b>Продажа</b>\n"
+            f"Тариф: {title} · {order['devices']} устр · {order['period']}\n"
+            f"Регион: {order['region']}\n"
+            f"Сумма: {order['rub']} ₽{promo}\n"
+            f"Покупатель: <code>{user_id}</code>"
+        )
+
         await bot.send_message(SALES_LOG_CHAT_ID, text)
+
     except Exception:
         pass
 
