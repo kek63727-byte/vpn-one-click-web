@@ -519,7 +519,9 @@ async def cb_subactloc(call: CallbackQuery, bot: Bot):
         exp_dt = datetime.fromisoformat((cfg.get("expires_at") or "").replace("Z", ""))
     except Exception:
         exp_dt = datetime.utcnow()
-       await _send_config(call.message, cfg, exp_dt, 1, 1, lang)
+
+    await _send_config(call.message, cfg, exp_dt, 1, 1, lang)
+
     if (cfg.get("config_type") or "wireguard") == "wireguard":
         await call.message.answer(_tt(lang, "📖 Как подключить — выбери платформу:",
                                       "📖 How to connect — choose a platform:"), reply_markup=howto_kb(lang))
