@@ -1902,40 +1902,37 @@ def _vless_caption(region: str, expires, idx: int, total: int, lang: str) -> str
 
 def _vless_howto(lang: str) -> str:
     if lang == "en":
-        return ("📲 <b>Setup (happ app):</b>\n"
-                "1️⃣ Copy the JSON below\n"
-                "2️⃣ Open the <b>happ</b> app\n"
-                "3️⃣ Tap <b>+</b> → <b>Import from clipboard</b>")
-    return ("📲 <b>Настройка (приложение happ):</b>\n"
-            "1️⃣ Скопируй JSON ниже\n"
-            "2️⃣ Открой приложение <b>happ</b>\n"
-            "3️⃣ Нажми <b>+</b> → <b>Import from clipboard</b>")
+        return (
+            f"{texts.LINE}\n"
+            "📲 <b>Setup — happ app</b>\n"
+            f"{texts.LINE}\n"
+            "1️⃣  Tap the config below to copy it\n"
+            "2️⃣  Open the <b>happ</b> app\n"
+            "3️⃣  Tap <b>➕</b> in the top right corner\n"
+            "4️⃣  Choose <b>Import from clipboard</b>\n"
+            f"{texts.LINE}\n"
+            "✨ Done — you're connected!"
+        )
+    return (
+        f"{texts.LINE}\n"
+        "📲 <b>Настройка — приложение happ</b>\n"
+        f"{texts.LINE}\n"
+        "1️⃣  Нажми на конфиг ниже, чтобы скопировать\n"
+        "2️⃣  Открой приложение <b>happ</b>\n"
+        "3️⃣  Нажми <b>➕</b> в правом верхнем углу\n"
+        "4️⃣  Выбери <b>Import from clipboard</b>\n"
+        f"{texts.LINE}\n"
+        "✨ Готово — ты подключён!"
+    )
+
+
+def _vless_copy_hint(lang: str) -> str:
+    return _tt(lang, "👇 <b>Твой конфиг</b> — нажми, чтобы скопировать",
+              "👇 <b>Your config</b> — tap to copy")
 
 
 def _vless_fits_inline(text: str) -> bool:
     return len(text) <= _VLESS_INLINE_LIMIT
-
-
-async def send_config_to(bot: Bot, user_id: int, cfg: dict, lang: str = "ru"):
-    """Отправляет конфиг конкретному пользователю по user_id (для админских действий)."""
-    try:
-        exp = datetime.fromisoformat((cfg.get("expires_at") or "").replace("Z", ""))
-    except (ValueError, TypeError):
-        exp = db.now()
-    if (cfg.get("config_type") or "wireguard") == "vless":
-        await _send_vless_config_to(bot, user_id, cfg, exp, lang)
-    else:
-        await _send_wg_config_to(bot, user_id, cfg, exp, lang)
-
-
-async def _send_wg_config_to(bot: Bot, user_id: int, cfg: dict, exp, lang: str = "ru"):
-    region = cfg["region"]
-    text = cfg["config_text"]
-    filename = f"{texts.region_slug(region)}_{cfg['id']}.conf"
-    caption = texts.delivery_caption(flag(region), texts.region_name(region, lang),
-                                     exp.strftime("%d.%m.%Y %H:%M UTC"), 1, 1, lang)
-    await bot.send_document(user_id, BufferedInputFile(text.encode(), filename=filename), caption=caption)
-    await bot.send_photo(user_id, BufferedInputFile(make_qr_png(text), filename="qr.png"))
 
 
 async def _send_vless_config_to(bot: Bot, user_id: int, cfg: dict, exp, lang: str = "ru"):
@@ -1944,27 +1941,11 @@ async def _send_vless_config_to(bot: Bot, user_id: int, cfg: dict, exp, lang: st
     caption = _vless_caption(region, exp, 1, 1, lang)
     await bot.send_message(user_id, f"{caption}\n\n{_vless_howto(lang)}")
     if _vless_fits_inline(text):
-        await bot.send_message(user_id, f"<code>{_html.escape(text)}</code>")
+        await bot.send_message(user_id, f"{_vless_copy_hint(lang)}\n<code>{_html.escape(text)}</code>")
     else:
         filename = f"{texts.region_slug(region)}_{cfg['id']}.json"
-        await bot.send_document(user_id, BufferedInputFile(text.encode(), filename=filename))
-
-
-async def _send_config(target: Message, cfg: dict, expires, idx, total, lang="ru"):
-    if (cfg.get("config_type") or "wireguard") == "vless":
-        await _send_vless_config(target, cfg, expires, idx, total, lang)
-    else:
-        await _send_wg_config(target, cfg, expires, idx, total, lang)
-
-
-async def _send_wg_config(target: Message, cfg: dict, expires, idx, total, lang="ru"):
-    region = cfg["region"]
-    text = cfg["config_text"]
-    filename = f"{texts.region_slug(region)}_{cfg['id']}.conf"
-    caption = texts.delivery_caption(flag(region), texts.region_name(region, lang),
-                                     expires.strftime("%d.%m.%Y %H:%M UTC"), idx, total, lang)
-    await target.answer_document(BufferedInputFile(text.encode(), filename=filename), caption=caption)
-    await target.answer_photo(BufferedInputFile(make_qr_png(text), filename="qr.png"))
+        await bot.send_document(user_id, BufferedInputFile(text.encode(), filename=filename),
+                                caption=_vless_copy_hint(lang))
 
 
 async def _send_vless_config(target: Message, cfg: dict, expires, idx, total, lang="ru"):
@@ -1973,11 +1954,11 @@ async def _send_vless_config(target: Message, cfg: dict, expires, idx, total, la
     caption = _vless_caption(region, expires, idx, total, lang)
     await target.answer(f"{caption}\n\n{_vless_howto(lang)}")
     if _vless_fits_inline(text):
-        await target.answer(f"<code>{_html.escape(text)}</code>")
+        await target.answer(f"{_vless_copy_hint(lang)}\n<code>{_html.escape(text)}</code>")
     else:
         filename = f"{texts.region_slug(region)}_{cfg['id']}.json"
-        await target.answer_document(BufferedInputFile(text.encode(), filename=filename))
-
+        await target.answer_document(BufferedInputFile(text.encode(), filename=filename),
+                                     caption=_vless_copy_hint(lang))
 # ============ МОИ ПОДКЛЮЧЕНИЯ ============
 
 @router.message(Command("myconfigs"))
