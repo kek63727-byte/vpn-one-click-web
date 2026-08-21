@@ -873,8 +873,8 @@ async def cb_trialloc(call: CallbackQuery, bot: Bot):
     extra = int(ab.variant_params(call.from_user.id).get("extra_days", 0) or 0)
     if extra > 0:
         expires = await db.extend_config(cfg["id"], extra)
-    await call.message.answer(_tt(lang, "🎁 <b>Пробный доступ активирован!</b>", "🎁 <b>Trial access activated!</b>"))
-        full = await db.get_config(cfg["id"])
+      await call.message.answer(_tt(lang, "🎁 <b>Пробный доступ активирован!</b>", "🎁 <b>Trial access activated!</b>"))
+    full = await db.get_config(cfg["id"])
     await _send_config(call.message, full, expires, 1, 1, lang)
     if (full.get("config_type") or "wireguard") == "wireguard":
         await call.message.answer(_tt(lang, "📖 Как подключить — выбери платформу:", "📖 How to connect — choose a platform:"), reply_markup=howto_kb(lang))
