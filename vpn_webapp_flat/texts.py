@@ -631,14 +631,6 @@ def guide(platform, lang="ru", protocol="wireguard"):
         table = _GUIDES_EN if _is_en(lang) else _GUIDES_RU
     return table.get(platform, "Not found." if _is_en(lang) else "Инструкция не найдена.")
 
-
-def guide(platform, lang="ru", protocol="wireguard"):
-    if protocol == "vless":
-        table = _HAPP_GUIDES_EN if _is_en(lang) else _HAPP_GUIDES_RU
-    else:
-        table = _GUIDES_EN if _is_en(lang) else _GUIDES_RU
-    return table.get(platform, "Not found." if _is_en(lang) else "Инструкция не найдена.")
-
 def delivery_caption(region_flag, region, expires_str, idx, total, lang="ru"):
     if _is_en(lang):
         head = "🔐 <b>Your secure tunnel is ready</b>"
