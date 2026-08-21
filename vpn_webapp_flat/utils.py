@@ -1,8 +1,13 @@
-"""
-Добавить в utils.py рядом с is_valid_wg()
-"""
-
 import json
+import re
+
+
+def is_valid_wg(text: str) -> bool:
+    """Проверяет, что строка — валидный WireGuard конфиг."""
+    if not text:
+        return False
+    text_lower = text.lower()
+    return "[interface]" in text_lower and "[peer]" in text_lower
 
 
 def is_valid_vless(text: str) -> bool:
@@ -49,15 +54,18 @@ def vless_region_from_json(text: str) -> str:
         remarks = data.get("remarks", "").strip()
         if not remarks:
             return "VLESS"
-        # Убираем эмодзи-флаги и лишнее после '|'
+        # Убираем лишнее после '|'
         if "|" in remarks:
             remarks = remarks.split("|")[0].strip()
-        # Убираем эмодзи (символы вне ASCII + пробелы в начале)
-        cleaned = "".join(c for c in remarks if ord(c) < 0x1F600 or ord(c) > 0x1FFFF).strip()
-        # Убираем оставшиеся unicode-флаги (regional indicator symbols U+1F1E0–U+1F1FF)
+        # Убираем региональные индикаторы (флаги) U+1F1E0–U+1F1FF
+        cleaned = "".join(
+            c for c in remarks
+            if not (0x1F1E0 <= ord(c) <= 0x1F1FF)
+        ).strip()
+        # Убираем прочие эмодзи U+1F600–U+1FFFF
         cleaned = "".join(
             c for c in cleaned
-            if not (0x1F1E0 <= ord(c) <= 0x1F1FF)
+            if not (0x1F600 <= ord(c) <= 0x1FFFF)
         ).strip()
         return cleaned if cleaned else remarks
     except Exception:
@@ -74,3 +82,22 @@ def vless_server_count(text: str) -> int:
         )
     except Exception:
         return 0
+
+
+def make_qr_png(text: str) -> bytes:
+    """Генерирует QR-код из текста, возвращает PNG bytes."""
+    try:
+        import qrcode
+        import io
+        qr = qrcode.make(text)
+        buf = io.BytesIO()
+        qr.save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception:
+        # Если qrcode не установлен — возвращаем пустой PNG (1x1 прозрачный)
+        return (
+            b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01'
+            b'\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89'
+            b'\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01'
+            b'\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
+        )
