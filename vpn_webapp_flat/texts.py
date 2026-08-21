@@ -594,6 +594,19 @@ def delivery_caption(region_flag, region, expires_str, idx, total, lang="ru"):
             f"⏳ Действует до: <code>{expires_str}</code>\n{LINE}\n"
             "Импортируй <code>.conf</code> в WireGuard или отсканируй QR 👇")
 
+def vless_delivery_caption(region_flag, region, expires_str, idx, total, lang="ru"):
+    if _is_en(lang):
+        head = "🔐 <b>Your secure connection is ready</b>"
+        if total > 1:
+            head = f"🔐 <b>Secure connection {idx}/{total} ready</b>"
+        return (f"{head}\n{LINE}\n{region_flag} Location: <b>{region}</b>\n"
+                f"⏳ Valid until: <code>{expires_str}</code>")
+    head = "🔐 <b>Защищённое соединение готово</b>"
+    if total > 1:
+        head = f"🔐 <b>Защищённое соединение {idx}/{total} готово</b>"
+    return (f"{head}\n{LINE}\n{region_flag} Локация: <b>{region}</b>\n"
+            f"⏳ Действует до: <code>{expires_str}</code>")
+            
 
 # ---- админские уведомления (на русском, это владельцу) ----
 def admin_stock_alert(region, kind, free):
