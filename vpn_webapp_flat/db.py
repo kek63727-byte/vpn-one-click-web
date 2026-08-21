@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS configs (
     is_premium INTEGER NOT NULL DEFAULT 0,
     is_trial INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'free',
+    config_type TEXT NOT NULL DEFAULT 'wireguard',
     user_id INTEGER, plan TEXT, period TEXT,
     created_at TEXT NOT NULL, reserved_at TEXT, sold_at TEXT, expires_at TEXT
 );
@@ -197,6 +198,7 @@ async def init_db():
         await _ensure_column(db, "configs", "lowbal_notified", "lowbal_notified INTEGER NOT NULL DEFAULT 0")
         await _ensure_column(db, "configs", "frozen_at", "frozen_at TEXT")
         await _ensure_column(db, "configs", "sub_id", "sub_id INTEGER")
+        await _ensure_column(db, "configs", "config_type", "config_type TEXT NOT NULL DEFAULT 'wireguard'")
         for col, ddl in [
             ("kind", "kind TEXT NOT NULL DEFAULT 'discount'"),
             ("amount_rub", "amount_rub INTEGER NOT NULL DEFAULT 0"),
@@ -660,8 +662,8 @@ async def add_config(region, config_text, is_premium, is_trial, source=None) -> 
     status = "free" if valid else "broken"
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute(
-            "INSERT INTO configs(region, config_text, is_premium, is_trial, status, source, created_at) "
-            "VALUES(?,?,?,?,?,?,?)",
+            "INSERT INTO configs(region, config_text, is_premium, is_trial, status, config_type, source, created_at) "
+            "VALUES(?,?,?,?,?,'wireguard',?,?)",
             (region, config_text, 1 if is_premium else 0, 1 if is_trial else 0, status, source, iso(now())),
         )
         await db.execute(
@@ -671,6 +673,53 @@ async def add_config(region, config_text, is_premium, is_trial, source=None) -> 
         )
         await db.commit()
         return cur.lastrowid, valid
+
+
+# ---------- VLESS-конфиги (happ) ----------
+
+async def add_vless_config(region, config_text, source=None) -> int:
+    """Добавляет один VLESS-конфиг (JSON для happ). Валидность проверяется до вызова
+    (в хендлере, через utils.is_valid_vless), поэтому здесь конфиг всегда кладётся 'free'.
+    Не является триальным, премиум-флаг не используется (сравнивается по региону). Возвращает id."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "INSERT INTO configs(region, config_text, is_premium, is_trial, status, config_type, source, created_at) "
+            "VALUES(?,?,0,0,'free','vless',?,?)",
+            (region, config_text, source, iso(now())),
+        )
+        await db.execute(
+            "INSERT INTO region_state(region, low_notified, empty_notified) VALUES(?,0,0) "
+            "ON CONFLICT(region) DO UPDATE SET low_notified=0, empty_notified=0",
+            (region,),
+        )
+        await db.commit()
+        return cur.lastrowid
+
+
+async def add_vless_configs_bulk(region, texts: list[str], source=None) -> tuple[int, int]:
+    """Массовое добавление VLESS-конфигов. Каждый элемент texts — уже провалидированный
+    JSON-текст (проверка is_valid_vless делается в хендлере ДО вызова этой функции).
+    Возвращает (добавлено, пропущено_пустых)."""
+    added = skipped = 0
+    async with aiosqlite.connect(DB_PATH) as db:
+        for t in texts:
+            t = (t or "").strip()
+            if not t:
+                skipped += 1
+                continue
+            await db.execute(
+                "INSERT INTO configs(region, config_text, is_premium, is_trial, status, config_type, source, created_at) "
+                "VALUES(?,?,0,0,'free','vless',?,?)",
+                (region, t, source, iso(now())),
+            )
+            added += 1
+        await db.execute(
+            "INSERT INTO region_state(region, low_notified, empty_notified) VALUES(?,0,0) "
+            "ON CONFLICT(region) DO UPDATE SET low_notified=0, empty_notified=0",
+            (region,),
+        )
+        await db.commit()
+    return added, skipped
 
 
 async def regions_overview(min_free):
@@ -1725,7 +1774,7 @@ RESTOCK_ACTIVE = ("new", "awaiting_payment", "paid")
 
 
 async def add_configs_bulk(region, is_premium, is_trial, texts: list[str], source=None) -> tuple[int, int]:
-    """Массовое добавление. Возвращает (добавлено_валидных, пропущено_битых).
+    """Массовое добавление WireGuard-конфигов. Возвращает (добавлено_валидных, пропущено_битых).
     Невалидные не кладутся в продажу вовсе."""
     from utils import is_valid_wg
     added = skipped = 0
@@ -1738,8 +1787,8 @@ async def add_configs_bulk(region, is_premium, is_trial, texts: list[str], sourc
                 skipped += 1
                 continue
             await db.execute(
-                "INSERT INTO configs(region, config_text, is_premium, is_trial, status, source, created_at) "
-                "VALUES(?,?,?,?,'free',?,?)",
+                "INSERT INTO configs(region, config_text, is_premium, is_trial, status, config_type, source, created_at) "
+                "VALUES(?,?,?,?,'free','wireguard',?,?)",
                 (region, t, 1 if is_premium else 0, 1 if is_trial else 0, source, iso(now())),
             )
             added += 1
@@ -1748,11 +1797,13 @@ async def add_configs_bulk(region, is_premium, is_trial, texts: list[str], sourc
 
 
 async def validate_free_stock() -> int:
-    """Сканирует все свободные конфиги, помечает невалидные как 'broken'. Возвращает число помеченных."""
+    """Сканирует все свободные WireGuard-конфиги, помечает невалидные как 'broken'.
+    VLESS-конфиги не трогает (у них своя валидация при загрузке). Возвращает число помеченных."""
     from utils import is_valid_wg
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT id, config_text FROM configs WHERE status='free'")
+        cur = await db.execute(
+            "SELECT id, config_text FROM configs WHERE status='free' AND config_type='wireguard'")
         rows = await cur.fetchall()
         bad = [r["id"] for r in rows if not is_valid_wg(r["config_text"])]
         for cid in bad:
