@@ -1017,6 +1017,27 @@
 </div>
 
 <script>
+
+// ══════════════════════ ИСПРАВЛЕНИЕ ИКОНОК ДЛЯ ВСЕХ УСТРОЙСТВ ══════════════════════
+// Часть старых WebView (некоторые версии Telegram на Android, старый iOS)
+// не понимает <use href="#i-xxx">, нужен ещё и xlink:href.
+// Патчим все текущие иконки + следим за новыми (тарифы, конфиги, регионы рендерятся динамически).
+const XLINK_NS = 'http://www.w3.org/1999/xlink';
+function patchIconHrefs(root = document) {
+  root.querySelectorAll('use[href]').forEach(u => {
+    const href = u.getAttribute('href');
+    if (href && !u.getAttributeNS(XLINK_NS, 'href')) {
+      u.setAttributeNS(XLINK_NS, 'xlink:href', href);
+    }
+  });
+}
+patchIconHrefs();
+new MutationObserver(muts => {
+  muts.forEach(m => m.addedNodes.forEach(n => {
+    if (n.nodeType === 1) patchIconHrefs(n);
+  }));
+}).observe(document.body, { childList: true, subtree: true });
+
 // ══════════════════════ CONFIG ══════════════════════
 const CONFIG = {
   // ← ЗАМЕНИ на @username твоего бота (без @)
@@ -1254,10 +1275,25 @@ function hideConfigModal() {
   document.getElementById('configModal').classList.remove('show');
 }
 
-function downloadConfigFile() {
+async function downloadConfigFile() {
   if (!currentConfig) return;
+  const blob = new Blob([currentConfig.text], { type: 'text/plain;charset=utf-8' });
+
+  // 1) iOS/Safari WebView: обычный download часто не работает,
+  // но Web Share умеет сохранять файл через "Сохранить в Файлы"
   try {
-    const blob = new Blob([currentConfig.text], { type: 'text/plain;charset=utf-8' });
+    const file = new File([blob], currentConfig.filename, { type: 'text/plain' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: currentConfig.filename });
+      tg?.HapticFeedback?.notificationOccurred('success');
+      return;
+    }
+  } catch (e) {
+    // пользователь закрыл диалог шеринга — просто идём дальше на fallback
+  }
+
+  // 2) Обычный способ (работает на десктопе и большинстве Android)
+  try {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -1268,7 +1304,17 @@ function downloadConfigFile() {
     setTimeout(() => URL.revokeObjectURL(url), 4000);
     showToast('✅ Файл сохранён');
     tg?.HapticFeedback?.notificationOccurred('success');
-  } catch (err) {
+    return;
+  } catch (err) {}
+
+  // 3) Последний fallback — открыть текст в системном браузере,
+  // там можно сохранить вручную (актуально для старых iOS WebView)
+  try {
+    const dataUrl = 'data:text/plain;charset=utf-8,' + encodeURIComponent(currentConfig.text);
+    if (tg?.openLink) tg.openLink(dataUrl);
+    else window.open(dataUrl, '_blank');
+    showToast('Открыли файл в браузере — сохрани его оттуда');
+  } catch (e2) {
     showToast('❌ Не удалось скачать. Скопируй текст вручную');
   }
 }
