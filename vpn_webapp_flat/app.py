@@ -441,7 +441,145 @@ async def api_check_topup(request):
     balance = await db.get_balance(user_id)
     return web.json_response({"status": "paid", "balance": balance})
 
+import time as _time
+import io as _io
+import requests as _req
 
+REPORT_REASON_LABELS = {
+    'no_connect':     '🚫 Не подключается вообще',
+    'slow_speed':     '⚡ Слабая скорость / тормоза',
+    'drops':          '🔗 Часто обрывается',
+    'want_region':    '🌍 Хочет другой регион',
+    'not_working_apps': '📱 Не работает на устройстве',
+    'sites_blocked':  '🛡 Нужные сайты всё ещё блокируются',
+    'other':          '💬 Другая проблема',
+}
+
+
+@routes.post("/report_config")
+async def api_report_config(request):
+    auth = await _auth(request)
+    if not auth:
+        return web.json_response({"error": "bad_init_data"}, status=401)
+    user_id = auth["user_id"]
+    body = request["_body"]
+
+    config_id = str(body.get("config_id", "")).strip()
+    region    = str(body.get("region", "")).strip()
+    reason    = str(body.get("reason", "")).strip()
+    comment   = str(body.get("comment", "")).strip()[:500]
+
+    if not config_id or not reason:
+        return web.json_response({"error": "missing_fields"}, status=400)
+
+    since = int(_time.time()) - 86400
+    existing = await db.count_recent_reports(user_id, config_id, since)
+    if existing >= 3:
+        return web.json_response({"error": "too_many_reports"}, status=429)
+
+    report_id = await db.create_config_report(user_id, config_id, region, reason, comment)
+    _notify_admin_report(report_id, user_id, auth.get("username"), region, reason, comment, config_id)
+    return web.json_response({"ok": True, "report_id": report_id})
+
+
+@routes.post("/admin/send_config")
+async def api_admin_send_config(request):
+    auth = await _auth(request)
+    if not auth or auth["user_id"] not in ADMIN_IDS:
+        return web.json_response({"error": "forbidden"}, status=403)
+    body = request["_body"]
+
+    report_id   = body.get("report_id")
+    target_uid  = body.get("user_id")
+    config_text = str(body.get("config_text", "")).strip()
+
+    if not target_uid or not config_text:
+        return web.json_response({"error": "missing_fields"}, status=400)
+
+    ok = _send_config_to_user(int(target_uid), config_text)
+    if not ok:
+        return web.json_response({"error": "send_failed"}, status=500)
+
+    if report_id:
+        await db.set_report_status(report_id, "resolved")
+
+    return web.json_response({"ok": True})
+
+
+def _notify_admin_report(report_id, user_id, username, region, reason, comment, config_id):
+    admin_id = next(iter(ADMIN_IDS), None)
+    if not admin_id or not BOT_TOKEN:
+        return
+
+    reason_text = REPORT_REASON_LABELS.get(reason, reason)
+    user_link   = f"@{username}" if username else f"[id{user_id}](tg://user?id={user_id})"
+    from datetime import datetime, timezone
+    ts = datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M UTC')
+
+    text = (
+        f"🔔 *Новая заявка #{report_id}*\n\n"
+        f"👤 Пользователь: {user_link}\n"
+        f"🌍 Регион: *{region}*\n"
+        f"⚠️ Причина: {reason_text}\n"
+        f"🆔 Config ID: `{config_id}`\n"
+        + (f"💬 Комментарий: _{comment}_\n" if comment else "")
+        + f"\n🕐 {ts}"
+    )
+
+    keyboard = {"inline_keyboard": [
+        [
+            {"text": "✅ Заменить авто",     "callback_data": f"rep_auto:{report_id}:{user_id}:{region}"},
+            {"text": "📤 Отправить вручную", "callback_data": f"rep_manual:{report_id}:{user_id}:{region}"},
+        ],
+        [
+            {"text": "❌ Отклонить",  "callback_data": f"rep_reject:{report_id}:{user_id}"},
+            {"text": "🔍 Профиль",   "callback_data": f"acard:{user_id}"},
+        ],
+    ]}
+
+    try:
+        _req.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+            json={"chat_id": admin_id, "text": text,
+                  "parse_mode": "Markdown", "reply_markup": keyboard},
+            timeout=5,
+        )
+    except Exception as e:
+        log.warning("notify_admin_report failed: %s", e)
+
+
+def _send_config_to_user(user_id: int, config_text: str) -> bool:
+    if not BOT_TOKEN:
+        return False
+
+    try:
+        _req.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+            json={"chat_id": user_id,
+                  "text": "✅ *Твой конфиг заменён!*\n\nНовый конфиг прикреплён ниже — просто импортируй его.",
+                  "parse_mode": "Markdown"},
+            timeout=5,
+        )
+
+        if config_text.startswith('[Interface]'):
+            fname, caption = '1clickvpn.conf', '📄 Конфиг WireGuard'
+        elif config_text.startswith('vless://') or config_text.startswith('vmess://'):
+            fname, caption = '1clickvpn_vless.txt', '📄 Конфиг VLESS'
+        else:
+            fname, caption = '1clickvpn.conf', '📄 Конфиг VPN'
+
+        file_obj = _io.BytesIO(config_text.encode('utf-8'))
+        resp = _req.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument",
+            data={"chat_id": user_id, "caption": caption},
+            files={"document": (fname, file_obj, 'text/plain')},
+            timeout=10,
+        )
+        return resp.ok
+    except Exception as e:
+        log.warning("send_config_to_user failed: %s", e)
+        return False
+        
 @routes.post("/admin/stats_summary")
 async def api_admin_stats(request):
     auth = await _auth(request)
