@@ -441,17 +441,14 @@ async def api_check_topup(request):
     balance = await db.get_balance(user_id)
     return web.json_response({"status": "paid", "balance": balance})
 
-import time as _time
-import io as _io
-
 REPORT_REASON_LABELS = {
-    'no_connect':     '🚫 Не подключается вообще',
-    'slow_speed':     '⚡ Слабая скорость / тормоза',
-    'drops':          '🔗 Часто обрывается',
-    'want_region':    '🌍 Хочет другой регион',
-    'not_working_apps': '📱 Не работает на устройстве',
-    'sites_blocked':  '🛡 Нужные сайты всё ещё блокируются',
-    'other':          '💬 Другая проблема',
+    'no_connect':        '🚫 Не подключается вообще',
+    'slow_speed':        '⚡ Слабая скорость / тормоза',
+    'drops':             '🔗 Часто обрывается',
+    'want_region':       '🌍 Хочет другой регион',
+    'not_working_apps':  '📱 Не работает на устройстве',
+    'sites_blocked':     '🛡 Нужные сайты всё ещё блокируются',
+    'other':             '💬 Другая проблема',
 }
 
 
@@ -463,150 +460,52 @@ async def api_report_config(request):
     user_id = auth["user_id"]
     body = request["_body"]
 
-    config_id = str(body.get("config_id", "")).strip()
-    region    = str(body.get("region", "")).strip()
-    reason    = str(body.get("reason", "")).strip()
-    comment   = str(body.get("comment", "")).strip()[:500]
+    try:
+        config_id = int(body.get("config_id"))
+    except (TypeError, ValueError):
+        return web.json_response({"error": "bad_config_id"}, status=400)
+    reason = str(body.get("reason", "")).strip()
+    comment = str(body.get("comment", "")).strip()[:500]
 
-    if not config_id or not reason:
+    if not reason:
         return web.json_response({"error": "missing_fields"}, status=400)
 
-    since = int(_time.time()) - 86400
-    existing = await db.count_recent_reports(user_id, config_id, since)
-    if existing >= 3:
+    cfg = await db.get_config(config_id)
+    if not cfg or cfg["user_id"] != user_id or cfg["status"] != "sold":
+        return web.json_response({"error": "not_your_config"}, status=403)
+
+    if await db.recent_reports_count(user_id, config_id) >= 3:
         return web.json_response({"error": "too_many_reports"}, status=429)
 
-    report_id = await db.create_config_report(user_id, config_id, region, reason, comment)
-    _notify_admin_report(report_id, user_id, auth.get("username"), region, reason, comment, config_id)
+    report_id = await db.create_report(user_id, config_id, cfg["region"], reason, comment)
+    await _notify_admin_report(report_id, auth, cfg, reason, comment)
     return web.json_response({"ok": True, "report_id": report_id})
 
 
-@routes.post("/admin/send_config")
-async def api_admin_send_config(request):
-    auth = await _auth(request)
-    if not auth or auth["user_id"] not in ADMIN_IDS:
-        return web.json_response({"error": "forbidden"}, status=403)
-    body = request["_body"]
-
-    report_id   = body.get("report_id")
-    target_uid  = body.get("user_id")
-    config_text = str(body.get("config_text", "")).strip()
-
-    if not target_uid or not config_text:
-        return web.json_response({"error": "missing_fields"}, status=400)
-
-    ok = _send_config_to_user(int(target_uid), config_text)
-    if not ok:
-        return web.json_response({"error": "send_failed"}, status=500)
-
-    if report_id:
-        await db.set_report_status(report_id, "resolved")
-
-    return web.json_response({"ok": True})
-
-
-def _notify_admin_report(report_id, user_id, username, region, reason, comment, config_id):
-    admin_id = next(iter(ADMIN_IDS), None)
-    if not admin_id or not BOT_TOKEN:
-        return
+async def _notify_admin_report(report_id, auth, cfg, reason, comment):
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
 
     reason_text = REPORT_REASON_LABELS.get(reason, reason)
-    user_link   = f"@{username}" if username else f"[id{user_id}](tg://user?id={user_id})"
-    from datetime import datetime, timezone
-    ts = datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M UTC')
-
+    uname = f"@{auth['username']}" if auth.get("username") else f"id{auth['user_id']}"
     text = (
-        f"🔔 *Новая заявка #{report_id}*\n\n"
-        f"👤 Пользователь: {user_link}\n"
-        f"🌍 Регион: *{region}*\n"
+        f"🔔 <b>Новая заявка #{report_id}</b>\n\n"
+        f"👤 Пользователь: {uname} (<code>{auth['user_id']}</code>)\n"
+        f"🌍 Регион: <b>{cfg['region']}</b>\n"
         f"⚠️ Причина: {reason_text}\n"
-        f"🆔 Config ID: `{config_id}`\n"
-        + (f"💬 Комментарий: _{comment}_\n" if comment else "")
-        + f"\n🕐 {ts}"
+        + (f"💬 Комментарий: <i>{comment}</i>\n" if comment else "")
     )
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✅ Заменить авто", callback_data=f"rep:auto:{report_id}")
+    kb.button(text="📤 Заменить вручную", callback_data=f"rep:manual:{report_id}")
+    kb.button(text="❌ Отклонить", callback_data=f"rep:reject:{report_id}")
+    kb.button(text="🔍 Профиль юзера", callback_data=f"acard:{auth['user_id']}")
+    kb.adjust(2, 2)
 
-    keyboard = {"inline_keyboard": [
-        [
-            {"text": "✅ Заменить авто",     "callback_data": f"rep_auto:{report_id}:{user_id}:{region}"},
-            {"text": "📤 Отправить вручную", "callback_data": f"rep_manual:{report_id}:{user_id}:{region}"},
-        ],
-        [
-            {"text": "❌ Отклонить",  "callback_data": f"rep_reject:{report_id}:{user_id}"},
-            {"text": "🔍 Профиль",   "callback_data": f"acard:{user_id}"},
-        ],
-    ]}
-
-    async def _send():
+    for admin_id in ADMIN_IDS:
         try:
-            async with __import__("aiohttp").ClientSession() as session:
-                await session.post(
-                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-                    json={"chat_id": admin_id, "text": text,
-                          "parse_mode": "Markdown", "reply_markup": keyboard},
-                    timeout=5,
-                )
+            await bot.send_message(admin_id, text, reply_markup=kb.as_markup())
         except Exception as e:
-            log.warning("notify_admin_report failed: %s", e)
-
-    asyncio.create_task(_send())
-
-
-def _send_config_to_user(user_id: int, config_text: str) -> bool:
-    if not BOT_TOKEN:
-        return False
-
-    # Синхронный вызов оставляем совместимым с текущим кодом.
-    # HTTP выполняется через стандартный urllib, поэтому requests не нужен.
-    import urllib.request
-    import urllib.parse
-
-    try:
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-        payload = urllib.parse.urlencode({
-            "chat_id": user_id,
-            "text": "✅ *Твой конфиг заменён!*\n\nНовый конфиг прикреплён ниже — просто импортируй его.",
-            "parse_mode": "Markdown",
-        }).encode("utf-8")
-        with urllib.request.urlopen(
-            urllib.request.Request(url, data=payload, method="POST"),
-            timeout=5,
-        ):
-            pass
-
-        if config_text.startswith('[Interface]'):
-            fname, caption = '1clickvpn.conf', '📄 Конфиг WireGuard'
-        elif config_text.startswith('vless://') or config_text.startswith('vmess://'):
-            fname, caption = '1clickvpn_vless.txt', '📄 Конфиг VLESS'
-        else:
-            fname, caption = '1clickvpn.conf', '📄 Конфиг VPN'
-
-        boundary = "----VPNMiniAppBoundary"
-        body = (
-            f"--{boundary}\r\n"
-            f'Content-Disposition: form-data; name="chat_id"\r\n\r\n'
-            f"{user_id}\r\n"
-            f"--{boundary}\r\n"
-            f'Content-Disposition: form-data; name="caption"\r\n\r\n'
-            f"{caption}\r\n"
-            f"--{boundary}\r\n"
-            f'Content-Disposition: form-data; name="document"; filename="{fname}"\r\n'
-            f"Content-Type: text/plain\r\n\r\n"
-        ).encode("utf-8") + config_text.encode("utf-8") + f"\r\n--{boundary}--\r\n".encode("utf-8")
-
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
-        req = urllib.request.Request(
-            url,
-            data=body,
-            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return 200 <= resp.status < 300
-
-    except Exception as e:
-        log.warning("send_config_to_user failed: %s", e)
-        return False
-        
+            log.warning("notify_admin_report to %s failed: %s", admin_id, e)
 @routes.post("/admin/stats_summary")
 async def api_admin_stats(request):
     auth = await _auth(request)
