@@ -148,14 +148,14 @@ CREATE TABLE IF NOT EXISTS payout_requests (
 );
 
 CREATE TABLE IF NOT EXISTS config_reports (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id     INTEGER NOT NULL,
-    config_id   INTEGER NOT NULL,
-    region      TEXT NOT NULL,
-    reason      TEXT NOT NULL,
-    comment     TEXT DEFAULT '',
-    status      TEXT NOT NULL DEFAULT 'new',
-    created_at  TEXT NOT NULL,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    config_id INTEGER NOT NULL,
+    region TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    comment TEXT DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'new',
+    created_at TEXT NOT NULL,
     resolved_at TEXT
 );
 
@@ -1949,7 +1949,7 @@ async def restock_inc_added(rid, n):
             (n, iso(now()), rid))
         await db.commit()
 
-        # ---------- заявки на замену конфига (report) ----------
+# ---------- заявки на замену конфига (report) ----------
 
 async def create_report(user_id, config_id, region, reason, comment="") -> int:
     async with aiosqlite.connect(DB_PATH) as db:
