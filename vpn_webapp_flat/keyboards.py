@@ -78,6 +78,10 @@ def language_kb():
 
 def main_menu_kb(lang="ru"):
     kb = InlineKeyboardBuilder()
+    kb.button(
+        text=_t(lang, "🛒 Купить подписку", "🛒 Buy subscription"),
+        url="https://t.me/one_clickvpn_bot?startapp=profile",
+    )
     kb.button(text=_t(lang, "🎁 Триал 3 дня", "🎁 3-day trial"), callback_data="trial")
     kb.button(text=_t(lang, "💰 Баланс", "💰 Balance"), callback_data="balance")
     kb.button(text=_t(lang, "👥 Пригласить друга", "👥 Invite a friend"), callback_data="ref")
@@ -89,7 +93,7 @@ def main_menu_kb(lang="ru"):
     kb.button(text=_t(lang, "📰 Новости", "📰 News"), url=NEWS_CHANNEL_URL)
     kb.button(text=_t(lang, "ℹ️ О сервисе", "ℹ️ About"), callback_data="about")
     kb.button(text="🌐 Язык · Language", callback_data="lang")
-    kb.adjust(2, 2, 2, 2, 2, 1)
+    kb.adjust(1, 2, 2, 2, 2, 2, 1)
     return kb.as_markup()
 
 
