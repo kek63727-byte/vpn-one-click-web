@@ -42,6 +42,7 @@ import db
 import store
 import payments as pay
 import handlers_user
+import admin_api    
 from config import ADMIN_IDS, BOT_TOKEN, PAYMENT_MODE, PLANS, RESTOCK_THRESHOLD, PRIME_PLAN, PRIME_DEVICES, PRIME_PRICES
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -550,6 +551,7 @@ async def api_admin_stats(request):
 # ─────────────────────────────── запуск ───────────────────────────────
 
 async def on_startup(app: web.Application):
+    app["bot"] = bot   
     await db.init_db()
     await store.load_from_db()
     import bot as bot_module
@@ -567,6 +569,7 @@ async def on_cleanup(app: web.Application):
 def build_app() -> web.Application:
     app = web.Application()
     app.add_routes(routes)
+    app.add_routes(admin_api.routes)    
     if os.path.isdir(STATIC_DIR):
         app.router.add_static("/static/", STATIC_DIR, show_index=False)
     app.on_startup.append(on_startup)
