@@ -1366,7 +1366,7 @@ const HOWTO_CONTENT = {
       'Нажми «Активировать» — соединение установлено.',
     ]
   },
-  mac: {
+    mac: {
     icon: 'mac',
     title: 'Подключение на macOS',
     sub: 'Установи WireGuard из Mac App Store и добавь свой конфиг.',
@@ -1378,6 +1378,19 @@ const HOWTO_CONTENT = {
       'Нажми «Активировать» в списке туннелей — VPN подключён.',
     ]
   },
+  vless: {
+    icon: 'gem',
+    title: 'VLESS через happ',
+    sub: 'Premium-протокол с максимальной скоростью и стабильностью. Подключается за 4 шага в приложении happ.',
+    steps: [
+      'Купи подписку в разделе <b>«Магазин»</b> — VLESS-конфиг придёт в бот и появится во вкладке «Подключения».',
+      'Установи приложение <b>happ</b> — доступно для iOS, Android, Windows и macOS.',
+      'Открой «Подключения» → нажми <b>«Конфиг»</b> → «Копировать» (конфиг скопируется в буфер обмена).',
+      'Открой happ → нажми <b>«+»</b> в правом верхнем углу.',
+      'Выбери <b>«Импорт из буфера обмена»</b> — конфиг добавится автоматически.',
+      'Нажми на добавленное подключение в списке — happ подключится к серверу.',
+    ]
+  },
 };
 
 let howtoActiveTab = 'ios';
@@ -1385,7 +1398,7 @@ let howtoActiveTab = 'ios';
 function renderHowtoTabs() {
   const wrap = document.getElementById('howtoTabs');
   wrap.innerHTML = Object.keys(HOWTO_CONTENT).map(key => {
-    const label = { ios: 'iOS', android: 'Android', windows: 'Windows', mac: 'macOS' }[key];
+    const label = { ios: 'iOS', android: 'Android', windows: 'Windows', mac: 'macOS', vless: 'VLESS' }[key];
     return `<div class="howto-tab ${key === howtoActiveTab ? 'active' : ''}" onclick="selectHowtoTab('${key}')">${label}</div>`;
   }).join('');
 }
