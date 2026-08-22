@@ -263,7 +263,15 @@ def trial_intro(lang="ru"):
             "Выбери локацию — пришлю рабочий конфиг прямо сейчас.\n"
             "Без оплаты и без карты 💳\n" + LINE + "\n🌍 Доступные серверы:")
 
-
+def trial_need_sub(channel_title="новостной канал", lang="ru"):
+    if _is_en(lang):
+        return (f"🎁 <b>Free trial — {TRIAL_DAYS} days</b>\n{LINE}\n"
+                f"To activate the trial, subscribe to our channel first.\n\n"
+                f"1) Tap «📢 Subscribe»\n2) Then «✅ I subscribed»")
+    return (f"🎁 <b>Пробный период — {TRIAL_DAYS} дня</b>\n{LINE}\n"
+            f"Чтобы активировать триал, сначала подпишись на наш канал.\n\n"
+            f"1) Нажми «📢 Подписаться»\n2) Затем «✅ Я подписался»")
+            
 def trial_used(lang="ru"):
     if _is_en(lang):
         return ("🎁 <b>Free trial already used</b>\n" + LINE + "\n"
