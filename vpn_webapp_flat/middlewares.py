@@ -31,25 +31,30 @@ class BanMiddleware(BaseMiddleware):
 
 
 class ThrottlingMiddleware(BaseMiddleware):
-    """Простой анти-спам: не чаще 1 действия в `rate` секунд на пользователя."""
-
-    def __init__(self, rate: float = 0.5):
-        self.rate = rate
-        self._last: dict[int, float] = defaultdict(float)
+    """Анти-спам: раздельные лимиты для сообщений и callback-кнопок."""
+    def __init__(self, rate: float = 0.5, callback_rate: float = 0.15):
+        self.rate = rate                    # лимит для обычных сообщений
+        self.callback_rate = callback_rate  # более мягкий лимит для кнопок
+        self._last_msg: dict[int, float] = defaultdict(float)
+        self._last_cb: dict[int, float] = defaultdict(float)
         super().__init__()
 
     async def __call__(self, handler, event, data):
         user = getattr(event, "from_user", None) or data.get("event_from_user")
         if user and user.id not in ADMIN_IDS:
             now = time.monotonic()
-            if now - self._last[user.id] < self.rate:
-                if isinstance(event, CallbackQuery):
+            is_callback = isinstance(event, CallbackQuery)
+            store = self._last_cb if is_callback else self._last_msg
+            limit = self.callback_rate if is_callback else self.rate
+
+            if now - store[user.id] < limit:
+                if is_callback:
                     try:
                         await event.answer()  # гасим "часики", без спама алертами
                     except Exception:
                         pass
                 return
-            self._last[user.id] = now
+            store[user.id] = now
         return await handler(event, data)
 
 
