@@ -325,6 +325,7 @@
   .conn-dl-btn:active { transform: scale(0.94); }
   .conn-dl-btn svg { width: 12px; height: 12px; }
   .conn-dl-btn.loading { opacity: 0.6; pointer-events: none; }
+    .conn-dl-btn.report-btn { color: var(--orange); border-color: rgba(245,158,11,0.3); background: rgba(245,158,11,0.08); }
 
   /* CONFIG MODAL */
   .config-modal-sheet { max-height: 82vh; overflow-y: auto; }
@@ -1161,10 +1162,13 @@ function renderConnections() {
           <div class="conn-name">${cfg.region}</div>
           <div class="conn-meta">до ${exp} · ${cfg.plan || 'standard'}</div>
         </div>
-        <div class="conn-side">
+                <div class="conn-side">
           <span class="conn-status ${isActive ? 'active' : 'expired'}">${isActive ? 'active' : 'expired'}</span>
           ${isActive ? `<button class="conn-dl-btn" onclick="openConfigModal('${cfgId}', this)">
             <svg class="icon"><use href="#i-download"/></svg>Конфиг
+          </button>
+          <button class="conn-dl-btn report-btn" onclick="openReportModal('${cfgId}', '${cfg.region}')">
+            <svg class="icon"><use href="#i-bell"/></svg>Проблема
           </button>` : ''}
         </div>
       </div>`;
@@ -2026,9 +2030,142 @@ if (urlParams.get('status') === 'success') {
   }
 })();
 
+// ══════════════════════ REPORT: сообщить о проблеме с конфигом ══════════════════════
+const REPORT_REASONS = [
+  { id: 'no_connect',       icon: 'ban',     label: 'Не подключается вообще' },
+  { id: 'slow_speed',       icon: 'zap',     label: 'Слабая скорость / тормоза' },
+  { id: 'drops',            icon: 'link',    label: 'Часто обрывается' },
+  { id: 'want_region',      icon: 'globe',   label: 'Хочу другой регион' },
+  { id: 'not_working_apps', icon: 'devices', label: 'Не работает на моём устройстве' },
+  { id: 'sites_blocked',    icon: 'shield',  label: 'Нужные сайты всё ещё блокируются' },
+  { id: 'other',            icon: 'bell',    label: 'Другая проблема' },
+];
+
+let reportState = { configId: null, region: null, reason: null };
+
+function openReportModal(configId, region) {
+  reportState = { configId, region, reason: null };
+  document.getElementById('reportRegionLabel').textContent = `Конфиг: ${region}`;
+  document.getElementById('reportComment').value = '';
+
+  const wrap = document.getElementById('reportReasons');
+  wrap.innerHTML = REPORT_REASONS.map(r => `
+    <div class="report-reason-btn" data-id="${r.id}" onclick="selectReportReason('${r.id}', this)"
+      style="display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:12px;
+             background:var(--card);border:1.5px solid var(--border);cursor:pointer;transition:border-color .15s,background .15s;">
+      <div style="width:30px;height:30px;border-radius:9px;background:rgba(245,158,11,0.1);
+                  color:var(--orange);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg class="icon" style="width:15px;height:15px;"><use href="#i-${r.icon}"/></svg>
+      </div>
+      <span style="font-size:13px;font-weight:600;">${r.label}</span>
+      <svg class="icon" style="width:14px;height:14px;margin-left:auto;color:var(--muted);display:none;" id="check-${r.id}"><use href="#i-check"/></svg>
+    </div>`).join('');
+
+  document.getElementById('reportModal').classList.add('show');
+  tg?.HapticFeedback?.impactOccurred('light');
+}
+
+function selectReportReason(id, el) {
+  reportState.reason = id;
+  document.querySelectorAll('.report-reason-btn').forEach(b => {
+    b.style.borderColor = 'var(--border)';
+    b.style.background = 'var(--card)';
+    b.querySelector('svg:last-child').style.display = 'none';
+  });
+  el.style.borderColor = 'var(--orange)';
+  el.style.background = 'rgba(245,158,11,0.06)';
+  el.querySelector('svg:last-child').style.display = 'block';
+  tg?.HapticFeedback?.selectionChanged();
+}
+
+function hideReportModal() {
+  document.getElementById('reportModal').classList.remove('show');
+}
+
+async function submitReport() {
+  if (!reportState.reason) {
+    showToast('Выбери причину обращения');
+    return;
+  }
+  if (!tg?.initData) {
+    showToast('Открой мини-апп через бот');
+    return;
+  }
+
+  const btn = document.getElementById('reportSubmitBtn');
+  btn.disabled = true;
+  btn.style.opacity = '0.6';
+
+  try {
+    const resp = await fetch('/report_config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        config_id: reportState.configId,
+        region: reportState.region,
+        reason: reportState.reason,
+        comment: document.getElementById('reportComment').value.trim(),
+        init_data: tg.initData,
+      }),
+    });
+    const data = await resp.json();
+
+    btn.disabled = false;
+    btn.style.opacity = '1';
+
+    if (data.error) {
+      const msgs = {
+        too_many_reports: '❌ Слишком много заявок по этому конфигу за 24ч',
+        not_your_config: '❌ Этот конфиг тебе не принадлежит',
+      };
+      showToast(msgs[data.error] || '❌ ' + data.error);
+      tg?.HapticFeedback?.notificationOccurred('error');
+      return;
+    }
+
+    hideReportModal();
+    showToast('✅ Заявка отправлена — мы разберёмся!');
+    tg?.HapticFeedback?.notificationOccurred('success');
+  } catch (err) {
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    showToast('❌ ' + err.message);
+  }
+}
+
 // ══════════════════════ ЗАПУСК ══════════════════════
 // Загружаем данные с сервера при старте
 loadUserData();
 </script>
+
+<!-- REPORT MODAL -->
+<div class="modal-overlay" id="reportModal">
+  <div class="modal-sheet" style="padding-bottom:calc(env(safe-area-inset-bottom) + 20px);">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
+      <div style="width:36px;height:36px;border-radius:10px;background:rgba(245,158,11,0.14);color:var(--orange);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg class="icon" style="width:18px;height:18px;"><use href="#i-bell"/></svg>
+      </div>
+      <div class="modal-title" style="margin:0;">Сообщить о проблеме</div>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:18px;" id="reportRegionLabel"></div>
+
+    <div style="font-size:11px;font-weight:700;font-family:var(--mono);color:var(--muted);letter-spacing:1.2px;text-transform:uppercase;margin-bottom:10px;">Причина</div>
+    <div id="reportReasons" style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px;"></div>
+
+    <div style="font-size:11px;font-weight:700;font-family:var(--mono);color:var(--muted);letter-spacing:1.2px;text-transform:uppercase;margin-bottom:8px;">Комментарий (необязательно)</div>
+    <textarea id="reportComment"
+      placeholder="Опиши проблему подробнее…"
+      style="width:100%;min-height:72px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;color:var(--text);font-size:13px;font-family:var(--sans);resize:none;line-height:1.5;margin-bottom:16px;">
+    </textarea>
+
+    <button class="modal-pay-btn" id="reportSubmitBtn" onclick="submitReport()"
+      style="background:linear-gradient(135deg,#d97706,#f59e0b);box-shadow:0 8px 24px -8px rgba(245,158,11,0.45);">
+      <svg class="icon" style="width:16px;height:16px;"><use href="#i-arrow-send"/></svg>
+      Отправить заявку
+    </button>
+    <button class="modal-cancel" onclick="hideReportModal()">Отмена</button>
+  </div>
+</div>
+
 </body>
 </html>
