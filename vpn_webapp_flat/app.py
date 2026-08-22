@@ -42,10 +42,22 @@ import db
 import store
 import payments as pay
 import handlers_user
-import admin_api    
-from config import ADMIN_IDS, BOT_TOKEN, PAYMENT_MODE, PLANS, RESTOCK_THRESHOLD, PRIME_PLAN, PRIME_DEVICES, PRIME_PRICES
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+from config import (
+    ADMIN_IDS,
+    BOT_TOKEN,
+    PAYMENT_MODE,
+    PLANS,
+    RESTOCK_THRESHOLD,
+    PRIME_PLAN,
+    PRIME_DEVICES,
+    PRIME_PRICES,
+)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
 log = logging.getLogger("webapp")
 
 if not BOT_TOKEN:
