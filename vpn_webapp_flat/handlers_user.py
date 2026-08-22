@@ -23,6 +23,7 @@ from config import (
     PRIME_ENABLED, PRIME_PLAN, PRIME_DEVICES, PRIME_PERIOD,
     STICKER_SET, CAPTCHA_ENABLED, BONUS_CHANNEL_ID, CHANNEL_BONUS_DAYS,
     TRIAL_REMINDER_PROMO_PERCENT, TRIAL_REMINDER_PROMO_DAYS, SWITCH_DISCOUNT_PERCENT,
+    NEWS_CHANNEL_URL,
 )
 from keyboards import (
     back_to_menu_kb, balance_kb, captcha_kb, chanbonus_kb, connection_kb, devices_kb, flag,
@@ -794,6 +795,26 @@ def _bonus_channel_ref():
         return int(cid)
     return cid if cid.startswith("@") else "@" + cid
 
+async def _trial_sub_ok(bot: Bot, user_id: int) -> bool:
+    """Проверка обязательной подписки на канал перед выдачей триала.
+    Если канал не настроен (BONUS_CHANNEL_ID пуст) — гейт отключён, триал доступен всем."""
+    ref = _bonus_channel_ref()
+    if not ref:
+        return True
+    try:
+        member = await bot.get_chat_member(ref, user_id)
+        return member.status in ("member", "administrator", "creator")
+    except Exception:
+        return False
+
+
+def _trial_sub_kb(lang="ru"):
+    kb = InlineKeyboardBuilder()
+    kb.button(text=_tt(lang, "📢 Подписаться", "📢 Subscribe"), url=NEWS_CHANNEL_URL)
+    kb.button(text=_tt(lang, "✅ Я подписался", "✅ I subscribed"), callback_data="trialcheck")
+    kb.button(text=_tt(lang, "⬅️ В меню", "⬅️ Back to menu"), callback_data="menu")
+    kb.adjust(1)
+    return kb.as_markup()
 
 @router.callback_query(F.data == "chanbonus")
 async def cb_chanbonus(call: CallbackQuery, bot: Bot):
@@ -831,12 +852,16 @@ async def cb_chanbonus(call: CallbackQuery, bot: Bot):
 # ============ ПРОБНЫЙ ПЕРИОД ============
 
 @router.callback_query(F.data == "trial")
-async def cb_trial(call: CallbackQuery):
+async def cb_trial(call: CallbackQuery, bot: Bot):
     lang = await _lang(call.from_user.id)
     rate = await _rate(lang)
     user = await db.get_user(call.from_user.id)
     if user and user["trial_used"]:
         await _edit(call, texts.trial_used(lang), plans_kb(lang, rate))
+        await call.answer()
+        return
+    if not await _trial_sub_ok(bot, call.from_user.id):
+        await _edit(call, texts.trial_need_sub(lang=lang), _trial_sub_kb(lang))
         await call.answer()
         return
     regions = await db.trial_regions()
@@ -852,11 +877,36 @@ async def cb_trial(call: CallbackQuery):
         await _edit(call, texts.trial_busy(lang), plans_kb(lang, rate))
     await call.answer()
 
+@router.callback_query(F.data == "trialcheck")
+async def cb_trial_check(call: CallbackQuery, bot: Bot):
+    lang = await _lang(call.from_user.id)
+    rate = await _rate(lang)
+    if not await _trial_sub_ok(bot, call.from_user.id):
+        await call.answer(_tt(lang, "Подписку пока не вижу.", "Subscription not found yet."), show_alert=True)
+        return
+    await call.answer("✅")
+    user = await db.get_user(call.from_user.id)
+    if user and user["trial_used"]:
+        await _edit(call, texts.trial_used(lang), plans_kb(lang, rate))
+        return
+    regions = await db.trial_regions()
+    if regions:
+        await _edit(call, texts.trial_intro(lang), trial_locations_kb(regions, lang))
+        return
+    applied, region = await db.extend_active(call.from_user.id, TRIAL_DAYS)
+    if applied:
+        await db.mark_trial_used(call.from_user.id)
+        await _edit(call, texts.trial_busy_bonus(texts.region_name(region, lang), TRIAL_DAYS, lang), back_to_menu_kb(lang))
+    else:
+        await _edit(call, texts.trial_busy(lang), plans_kb(lang, rate))
 
 @router.callback_query(F.data.startswith("trialloc:"))
 async def cb_trialloc(call: CallbackQuery, bot: Bot):
     lang = await _lang(call.from_user.id)
     region = call.data.split(":", 1)[1]
+    if not await _trial_sub_ok(bot, call.from_user.id):
+        await call.answer(_tt(lang, "Сначала подпишись на канал.", "Please subscribe to the channel first."), show_alert=True)
+        return
     user = await db.get_user(call.from_user.id)
 
     if user and user["trial_used"]:
