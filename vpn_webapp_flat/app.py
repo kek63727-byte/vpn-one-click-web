@@ -443,7 +443,6 @@ async def api_check_topup(request):
 
 import time as _time
 import io as _io
-import requests as _req
 
 REPORT_REASON_LABELS = {
     'no_connect':     '🚫 Не подключается вообще',
@@ -537,29 +536,42 @@ def _notify_admin_report(report_id, user_id, username, region, reason, comment, 
         ],
     ]}
 
-    try:
-        _req.post(
-            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-            json={"chat_id": admin_id, "text": text,
-                  "parse_mode": "Markdown", "reply_markup": keyboard},
-            timeout=5,
-        )
-    except Exception as e:
-        log.warning("notify_admin_report failed: %s", e)
+    async def _send():
+        try:
+            async with __import__("aiohttp").ClientSession() as session:
+                await session.post(
+                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                    json={"chat_id": admin_id, "text": text,
+                          "parse_mode": "Markdown", "reply_markup": keyboard},
+                    timeout=5,
+                )
+        except Exception as e:
+            log.warning("notify_admin_report failed: %s", e)
+
+    asyncio.create_task(_send())
 
 
 def _send_config_to_user(user_id: int, config_text: str) -> bool:
     if not BOT_TOKEN:
         return False
 
+    # Синхронный вызов оставляем совместимым с текущим кодом.
+    # HTTP выполняется через стандартный urllib, поэтому requests не нужен.
+    import urllib.request
+    import urllib.parse
+
     try:
-        _req.post(
-            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-            json={"chat_id": user_id,
-                  "text": "✅ *Твой конфиг заменён!*\n\nНовый конфиг прикреплён ниже — просто импортируй его.",
-                  "parse_mode": "Markdown"},
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        payload = urllib.parse.urlencode({
+            "chat_id": user_id,
+            "text": "✅ *Твой конфиг заменён!*\n\nНовый конфиг прикреплён ниже — просто импортируй его.",
+            "parse_mode": "Markdown",
+        }).encode("utf-8")
+        with urllib.request.urlopen(
+            urllib.request.Request(url, data=payload, method="POST"),
             timeout=5,
-        )
+        ):
+            pass
 
         if config_text.startswith('[Interface]'):
             fname, caption = '1clickvpn.conf', '📄 Конфиг WireGuard'
@@ -568,14 +580,29 @@ def _send_config_to_user(user_id: int, config_text: str) -> bool:
         else:
             fname, caption = '1clickvpn.conf', '📄 Конфиг VPN'
 
-        file_obj = _io.BytesIO(config_text.encode('utf-8'))
-        resp = _req.post(
-            f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument",
-            data={"chat_id": user_id, "caption": caption},
-            files={"document": (fname, file_obj, 'text/plain')},
-            timeout=10,
+        boundary = "----VPNMiniAppBoundary"
+        body = (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="chat_id"\r\n\r\n'
+            f"{user_id}\r\n"
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="caption"\r\n\r\n'
+            f"{caption}\r\n"
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="document"; filename="{fname}"\r\n'
+            f"Content-Type: text/plain\r\n\r\n"
+        ).encode("utf-8") + config_text.encode("utf-8") + f"\r\n--{boundary}--\r\n".encode("utf-8")
+
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
+        req = urllib.request.Request(
+            url,
+            data=body,
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+            method="POST",
         )
-        return resp.ok
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return 200 <= resp.status < 300
+
     except Exception as e:
         log.warning("send_config_to_user failed: %s", e)
         return False
