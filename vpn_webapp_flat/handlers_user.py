@@ -993,7 +993,27 @@ async def cb_trialloc(call: CallbackQuery, bot: Bot):
         )
     )
 
-
+@router.callback_query(F.data == "trialpromo")
+async def cb_trialpromo(call: CallbackQuery, bot: Bot):
+    lang = await _lang(call.from_user.id)
+    rate = await _rate(lang)
+    user = await db.get_user(call.from_user.id)
+    if user and user["trial_used"]:
+        await _edit(call, texts.trial_used(lang), plans_kb(lang, rate))
+        await call.answer()
+        return
+    if not await _trial_sub_ok(bot, call.from_user.id):
+        await _edit(call, texts.trial_need_sub(lang=lang), _trial_sub_kb(lang))
+        await call.answer()
+        return
+    regions = await db.trial_regions()
+    if regions:
+        await _edit(call, texts.trial_promo_intro(PROMO_TRIAL_PRICE, lang),
+                    trial_promo_locations_kb(regions, lang))
+        await call.answer()
+        return
+    await call.answer(_tt(lang, "😔 Сервера пока не готовы.", "😔 No servers ready yet."), show_alert=True)
+    
 @router.callback_query(F.data == "trialpromocheck")
 async def cb_trialpromo_check(call: CallbackQuery, bot: Bot):
     lang = await _lang(call.from_user.id)
