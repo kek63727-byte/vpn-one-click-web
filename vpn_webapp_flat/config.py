@@ -96,6 +96,7 @@ PRIME_PRICE = PRIME_PRICES[PRIME_PERIOD]
 
 # ============ ПРОБНЫЙ ПЕРИОД И РЕФЕРАЛКА ============
 TRIAL_DAYS = int(os.getenv("TRIAL_DAYS", "3"))
+PROMO_TRIAL_PRICE = int(os.getenv("PROMO_TRIAL_PRICE", "10"))
 REF_REWARD_DAYS = int(os.getenv("REF_REWARD_DAYS", "3"))
 REF_PERCENT = int(os.getenv("REF_PERCENT", "15"))
 # Минимальная сумма реферального баланса для вывода реальными деньгами (через саппорт).
