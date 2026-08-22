@@ -1566,14 +1566,50 @@ function selectRegion(name) {
   tg?.HapticFeedback?.selectionChanged();
 }
 
-// Инициализация магазина
-renderTariffTabs();
-renderTariffInfo();
-renderDeviceChips();
-renderPeriodChips();
-renderPriceSummary();
-renderRegions();
-renderTopupChips();
+// ══════════════════════ АКТУАЛЬНЫЕ ЦЕНЫ С СЕРВЕРА ══════════════════════
+async function loadPrices() {
+  try {
+    const resp = await fetch('/prices');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (data.plans) {
+      for (const [plan, byDevices] of Object.entries(data.plans)) {
+        if (!CONFIG.plans[plan]) continue;
+        for (const [devices, byPeriod] of Object.entries(byDevices)) {
+          CONFIG.plans[plan].prices[devices] = {
+            ...CONFIG.plans[plan].prices[devices],
+            ...byPeriod,
+          };
+        }
+      }
+    }
+    if (data.prime_prices) {
+      CONFIG.primePrices = { ...CONFIG.primePrices, ...data.prime_prices };
+    }
+  } catch (e) {
+    console.error('loadPrices error:', e);
+  }
+}
+
+(async function initShop() {
+  await loadPrices();
+  renderTariffTabs();
+  renderTariffInfo();
+  renderDeviceChips();
+  renderPeriodChips();
+  renderPriceSummary();
+  renderRegions();
+  renderTopupChips();
+
+  const price = CONFIG.primePrices[primePeriod];
+  document.getElementById('primePrice').innerHTML = primePeriod === 'year'
+    ? `${price} ₽<span>/год</span>`
+    : `${price} ₽<span>/месяц</span>`;
+  const m = CONFIG.primePrices.month * 12;
+  const y = CONFIG.primePrices.year;
+  const save = Math.round((1 - y / m) * 100);
+  document.getElementById('primeYearSave').textContent = `-${save}%`;
+})();
 
 // ══════════════════════ PRIME ══════════════════════
 let primePeriod = 'month';
@@ -1588,14 +1624,6 @@ function selectPrimePeriod(el, period) {
     : `${price} ₽<span>/месяц</span>`;
   tg?.HapticFeedback?.selectionChanged();
 }
-
-// Год vs Месяц экономия
-(function primeYearSavings() {
-  const m = CONFIG.primePrices.month * 12;
-  const y = CONFIG.primePrices.year;
-  const save = Math.round((1 - y / m) * 100);
-  document.getElementById('primeYearSave').textContent = `-${save}%`;
-})();
 
 // Купить Prime — создаём платёж через API (ultimate, 5 устройств)
 async function handlePrimeBuy() {
