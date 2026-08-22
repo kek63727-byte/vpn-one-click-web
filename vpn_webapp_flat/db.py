@@ -147,6 +147,18 @@ CREATE TABLE IF NOT EXISTS payout_requests (
     updated_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS config_reports (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL,
+    config_id   INTEGER NOT NULL,
+    region      TEXT NOT NULL,
+    reason      TEXT NOT NULL,
+    comment     TEXT DEFAULT '',
+    status      TEXT NOT NULL DEFAULT 'new',
+    created_at  TEXT NOT NULL,
+    resolved_at TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_configs_rs ON configs(region, status);
 """
 
@@ -1936,3 +1948,76 @@ async def restock_inc_added(rid, n):
             "UPDATE restock_orders SET added=added+?, updated_at=? WHERE id=?",
             (n, iso(now()), rid))
         await db.commit()
+
+        # ---------- заявки на замену конфига (report) ----------
+
+async def create_report(user_id, config_id, region, reason, comment="") -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "INSERT INTO config_reports(user_id, config_id, region, reason, comment, status, created_at) "
+            "VALUES(?,?,?,?,?, 'new', ?)",
+            (user_id, config_id, region, reason, comment, iso(now())),
+        )
+        await db.commit()
+        return cur.lastrowid
+
+
+async def get_report(report_id) -> dict | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute("SELECT * FROM config_reports WHERE id=?", (report_id,))
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+
+async def set_report_status(report_id, status):
+    async with aiosqlite.connect(DB_PATH) as db:
+        resolved = iso(now()) if status in ("resolved", "rejected") else None
+        await db.execute(
+            "UPDATE config_reports SET status=?, resolved_at=? WHERE id=?",
+            (status, resolved, report_id),
+        )
+        await db.commit()
+
+
+async def recent_reports_count(user_id, config_id, hours=24) -> int:
+    cutoff = iso(now() - timedelta(hours=hours))
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "SELECT COUNT(*) FROM config_reports WHERE user_id=? AND config_id=? AND created_at>=?",
+            (user_id, config_id, cutoff),
+        )
+        return (await cur.fetchone())[0]
+
+
+async def manual_replace_config(old_id, config_text) -> dict | None:
+    """Ручная замена: старый конфиг выводится из оборота ('replaced'), вместо него
+    создаётся новый (введённый админом текстом/файлом) с тем же сроком и владельцем."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        await db.execute("BEGIN IMMEDIATE")
+        cur = await db.execute("SELECT * FROM configs WHERE id=?", (old_id,))
+        old = await cur.fetchone()
+        if not old:
+            await db.commit()
+            return None
+        old = dict(old)
+        cur = await db.execute(
+            "INSERT INTO configs(region, config_text, is_premium, is_trial, status, config_type, "
+            "user_id, plan, period, source, created_at, sold_at, expires_at) "
+            "VALUES(?,?,?,0,'sold',?,?,?,?, 'manual_admin', ?, ?, ?)",
+            (old["region"], config_text, old["is_premium"], old["config_type"],
+             old["user_id"], old["plan"], old["period"], iso(now()), iso(now()), old["expires_at"]),
+        )
+        new_id = cur.lastrowid
+        await db.execute("UPDATE configs SET status='replaced' WHERE id=?", (old_id,))
+        await db.execute(
+            "INSERT INTO replacements(user_id, old_id, new_id, region, reason, old_source, created_at) "
+            "VALUES(?,?,?,?,?,?,?)",
+            (old["user_id"], old_id, new_id, old["region"], "manual_admin", old.get("source"), iso(now())),
+        )
+        await db.commit()
+        cur = await db.execute("SELECT * FROM configs WHERE id=?", (new_id,))
+        new = dict(await cur.fetchone())
+        new["old_source"] = old.get("source")
+        return new
