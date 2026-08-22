@@ -82,7 +82,7 @@ def main_menu_kb(lang="ru"):
         text=_t(lang, "🛒 Купить подписку", "🛒 Buy subscription"),
         url="https://t.me/one_clickvpn_bot?startapp=profile",
     )
-    kb.button(text=_t(lang, "🎁 Триал 3 дня", "🎁 3-day trial"), callback_data="trial")
+    kb.button(text=_t(lang, "🎁 Триал 3 дня — 10₽", "🎁 3-day trial — 10₽"), callback_data="trialpromo")
     kb.button(text=_t(lang, "💰 Баланс", "💰 Balance"), callback_data="balance")
     kb.button(text=_t(lang, "👥 Пригласить друга", "👥 Invite a friend"), callback_data="ref")
     kb.button(text=_t(lang, "🧾 Мои платежи", "🧾 My payments"), callback_data="history")
