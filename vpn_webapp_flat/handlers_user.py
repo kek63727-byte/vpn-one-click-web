@@ -31,7 +31,7 @@ from keyboards import (
     plans_kb, prime_buy_kb, prime_locations_kb, profile_kb, referral_kb, renew_kb, replace_country_kb,
     replace_reasons_kb, reply_menu_kb, REPLY_LABELS, support_kb, sub_activate_kb,
     sub_activate_locations_kb, sub_buy_kb, topup_amounts_kb,
-    topup_methods_kb, trial_locations_kb,
+    topup_methods_kb, trial_locations_kb, trial_promo_locations_kb,
 )
 from payments import (
     check_crypto_invoice, check_lava_invoice, create_crypto_invoice,
