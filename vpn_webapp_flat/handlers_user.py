@@ -2065,6 +2065,33 @@ async def _send_vless_config(target: Message, cfg: dict, expires, idx, total, la
         filename = f"{texts.region_slug(region)}_{cfg['id']}.json"
         await target.answer_document(BufferedInputFile(text.encode(), filename=filename),
                                      caption=_vless_copy_hint(lang))
+
+                                     
+
+async def _send_config(target: Message, cfg: dict, expires, idx: int, total: int, lang: str = "ru"):
+    """Диспетчер выдачи: VLESS (happ) или WireGuard (.conf + QR)."""
+    ctype = cfg.get("config_type") or "wireguard"
+    if ctype == "vless":
+        await _send_vless_config(target, cfg, expires, idx, total, lang)
+        return
+
+    region = cfg["region"]
+    text = cfg["config_text"]
+    caption = texts.delivery_caption(
+        flag(region), texts.region_name(region, lang),
+        expires.strftime("%d.%m.%Y %H:%M UTC"), idx, total, lang,
+    )
+    filename = f"{texts.region_slug(region)}_{cfg['id']}.conf"
+    await target.answer_document(
+        BufferedInputFile(text.encode(), filename=filename),
+        caption=caption,
+    )
+    try:
+        qr_bytes = make_qr_png(text)
+        await target.answer_photo(BufferedInputFile(qr_bytes, filename="qr.png"))
+    except Exception:
+        pass
+        
 # ============ МОИ ПОДКЛЮЧЕНИЯ ============
 
 @router.message(Command("myconfigs"))
