@@ -42,7 +42,7 @@ import db
 import store
 import payments as pay
 import handlers_user
-from config import ADMIN_IDS, BOT_TOKEN, PAYMENT_MODE, PLANS, RESTOCK_THRESHOLD
+from config import ADMIN_IDS, BOT_TOKEN, PAYMENT_MODE, PLANS, RESTOCK_THRESHOLD, PRIME_PLAN, PRIME_DEVICES, PRIME_PRICES
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("webapp")
@@ -139,6 +139,22 @@ async def index(request):
         return web.Response(text="static/index.html не найден", status=404)
     return web.FileResponse(path)
 
+@routes.get("/prices")
+async def api_prices(request):
+    """Актуальные цены (с учётом оверрайдов из админки) для мини-аппа —
+    чтобы не дублировать цены в JS и не показывать устаревшие цифры."""
+    plans_out = {}
+    for plan in PLANS:
+        by_devices: dict[str, dict[str, int]] = {}
+        for (devices, period), rub in store.plan_prices(plan).items():
+            by_devices.setdefault(str(devices), {})[period] = rub
+        plans_out[plan] = by_devices
+
+    prime_prices = {
+        period: store.get_price(PRIME_PLAN, PRIME_DEVICES, period)
+        for period in PRIME_PRICES
+    }
+    return web.json_response({"plans": plans_out, "prime_prices": prime_prices})
 
 @routes.post("/me")
 async def api_me(request):
