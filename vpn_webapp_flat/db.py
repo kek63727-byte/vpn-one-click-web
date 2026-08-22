@@ -677,15 +677,15 @@ async def add_config(region, config_text, is_premium, is_trial, source=None) -> 
 
 # ---------- VLESS-конфиги (happ) ----------
 
-async def add_vless_config(region, config_text, source=None) -> int:
+async def add_vless_config(region, config_text, source=None, is_trial=False) -> int:
     """Добавляет один VLESS-конфиг (JSON для happ). Валидность проверяется до вызова
     (в хендлере, через utils.is_valid_vless), поэтому здесь конфиг всегда кладётся 'free'.
-    Не является триальным, премиум-флаг не используется (сравнивается по региону). Возвращает id."""
+    is_trial=True — конфиг уходит в пробный пул (выдаётся только на триале). Возвращает id."""
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute(
             "INSERT INTO configs(region, config_text, is_premium, is_trial, status, config_type, source, created_at) "
-            "VALUES(?,?,0,0,'free','vless',?,?)",
-            (region, config_text, source, iso(now())),
+            "VALUES(?,?,0,?,'free','vless',?,?)",
+            (region, config_text, 1 if is_trial else 0, source, iso(now())),
         )
         await db.execute(
             "INSERT INTO region_state(region, low_notified, empty_notified) VALUES(?,0,0) "
@@ -696,9 +696,8 @@ async def add_vless_config(region, config_text, source=None) -> int:
         return cur.lastrowid
 
 
-async def add_vless_configs_bulk(region, texts: list[str], source=None) -> tuple[int, int]:
-    """Массовое добавление VLESS-конфигов. Каждый элемент texts — уже провалидированный
-    JSON-текст (проверка is_valid_vless делается в хендлере ДО вызова этой функции).
+async def add_vless_configs_bulk(region, texts: list[str], source=None, is_trial=False) -> tuple[int, int]:
+    """Массовое добавление VLESS-конфигов. is_trial=True — в пробный пул.
     Возвращает (добавлено, пропущено_пустых)."""
     added = skipped = 0
     async with aiosqlite.connect(DB_PATH) as db:
@@ -709,8 +708,8 @@ async def add_vless_configs_bulk(region, texts: list[str], source=None) -> tuple
                 continue
             await db.execute(
                 "INSERT INTO configs(region, config_text, is_premium, is_trial, status, config_type, source, created_at) "
-                "VALUES(?,?,0,0,'free','vless',?,?)",
-                (region, t, source, iso(now())),
+                "VALUES(?,?,0,?,'free','vless',?,?)",
+                (region, t, 1 if is_trial else 0, source, iso(now())),
             )
             added += 1
         await db.execute(
