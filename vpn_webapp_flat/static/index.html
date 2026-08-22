@@ -812,46 +812,55 @@
   </div>
   <div class="admin-section">Управление</div>
   <div class="admin-action-grid">
-    <div class="admin-action" onclick="openBotCommand('admin_users')">
+    <div class="admin-action" onclick="openAdmin('users')">
+
       <div class="admin-action-icon ic-violet"><svg class="icon" style="width:18px;height:18px;"><use href="#i-users"/></svg></div>
       <div><div class="admin-action-title">Пользователи</div><div class="admin-action-sub">Поиск, баланс, бан</div></div>
     </div>
-    <div class="admin-action" onclick="openBotCommand('admin_stats')">
+    <div class="admin-action" onclick="openAdmin('stats')">
+
       <div class="admin-action-icon ic-cyan"><svg class="icon" style="width:18px;height:18px;"><use href="#i-chart"/></svg></div>
       <div><div class="admin-action-title">Статистика</div><div class="admin-action-sub">Продажи и воронка</div></div>
     </div>
-    <div class="admin-action" onclick="openBotCommand('admin_servers')">
+    <div class="admin-action" onclick="openAdmin('servers')">
+
       <div class="admin-action-icon ic-green"><svg class="icon" style="width:18px;height:18px;"><use href="#i-server"/></svg></div>
       <div><div class="admin-action-title">Серверы</div><div class="admin-action-sub">Склад и регионы</div></div>
     </div>
-    <div class="admin-action" onclick="openBotCommand('admin_prices')">
+    <div class="admin-action" onclick="openAdmin('prices')">
+
       <div class="admin-action-icon ic-gold"><svg class="icon" style="width:18px;height:18px;"><use href="#i-tag"/></svg></div>
       <div><div class="admin-action-title">Цены</div><div class="admin-action-sub">Тарифы и скидки</div></div>
     </div>
-    <div class="admin-action" onclick="openBotCommand('admin_promo')">
+    <div class="admin-action" onclick="openAdmin('promo')">
+
       <div class="admin-action-icon ic-orange"><svg class="icon" style="width:18px;height:18px;"><use href="#i-gift"/></svg></div>
       <div><div class="admin-action-title">Промокоды</div><div class="admin-action-sub">Создание и управление</div></div>
     </div>
-    <div class="admin-action" onclick="openBotCommand('admin_broadcast')">
+    <div class="admin-action" onclick="openAdmin('broadcast')">
+
       <div class="admin-action-icon ic-pink"><svg class="icon" style="width:18px;height:18px;"><use href="#i-bell"/></svg></div>
       <div><div class="admin-action-title">Рассылка</div><div class="admin-action-sub">Сообщение всем</div></div>
     </div>
-    <div class="admin-action" onclick="openBotCommand('admin_ban')">
+    <div class="admin-action" onclick="openAdmin('ban')">
+
       <div class="admin-action-icon ic-red"><svg class="icon" style="width:18px;height:18px;"><use href="#i-ban"/></svg></div>
       <div><div class="admin-action-title">Бан / Разбан</div><div class="admin-action-sub">Блокировка юзеров</div></div>
     </div>
-    <div class="admin-action" onclick="openBotCommand('admin_ab')">
+    <div class="admin-action" onclick="openAdmin('ab')">
+
       <div class="admin-action-icon ic-violet"><svg class="icon" style="width:18px;height:18px;"><use href="#i-chart"/></svg></div>
       <div><div class="admin-action-title">A/B тесты</div><div class="admin-action-sub">Анализ конверсии</div></div>
     </div>
   </div>
   <div class="admin-section">Система</div>
   <div class="container" style="padding:0 16px;">
-    <div class="admin-action" onclick="openBotCommand('admin_backup')">
+    <div class="admin-action" onclick="openAdmin('backup')">
+
       <div class="admin-action-icon ic-cyan"><svg class="icon" style="width:18px;height:18px;"><use href="#i-download"/></svg></div>
       <div><div class="admin-action-title">Бэкап базы</div><div class="admin-action-sub">Скачать резервную копию</div></div>
     </div>
-    <div class="admin-action" onclick="openBotCommand('admin_restock')">
+    <div class="admin-action" onclick="openAdmin('restock')">
       <div class="admin-action-icon ic-green"><svg class="icon" style="width:18px;height:18px;"><use href="#i-zap"/></svg></div>
       <div><div class="admin-action-title">Заявки на закупку</div><div class="admin-action-sub">Открытые заявки склада</div></div>
     </div>
@@ -2225,6 +2234,7 @@ async function submitReport() {
 // Загружаем данные с сервера при старте
 loadUserData();
 </script>
+<script src="/static/admin.js"></script>
 
 <!-- REPORT MODAL -->
 <div class="modal-overlay" id="reportModal">
