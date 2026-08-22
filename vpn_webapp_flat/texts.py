@@ -263,6 +263,15 @@ def trial_intro(lang="ru"):
             "Выбери локацию — пришлю рабочий конфиг прямо сейчас.\n"
             "Без оплаты и без карты 💳\n" + LINE + "\n🌍 Доступные серверы:")
 
+def trial_promo_intro(price, lang="ru"):
+    if _is_en(lang):
+        return (f"✨ <b>3-day trial — {price} ₽</b>\n{LINE}\n"
+                "Pick a location — pay and get a working config right away.\n"
+                + LINE + "\n🌍 Available servers:")
+    return (f"✨ <b>Пробный доступ на 3 дня — {price} ₽</b>\n{LINE}\n"
+            "Выбери локацию — оплати и сразу получи рабочий конфиг.\n"
+            + LINE + "\n🌍 Доступные серверы:")
+            
 def trial_need_sub(channel_title="новостной канал", lang="ru"):
     if _is_en(lang):
         return (f"🎁 <b>Free trial — {TRIAL_DAYS} days</b>\n{LINE}\n"
