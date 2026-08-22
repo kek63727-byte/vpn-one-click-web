@@ -23,7 +23,7 @@ from config import (
     PRIME_ENABLED, PRIME_PLAN, PRIME_DEVICES, PRIME_PERIOD,
     STICKER_SET, CAPTCHA_ENABLED, BONUS_CHANNEL_ID, CHANNEL_BONUS_DAYS,
     TRIAL_REMINDER_PROMO_PERCENT, TRIAL_REMINDER_PROMO_DAYS, SWITCH_DISCOUNT_PERCENT,
-    NEWS_CHANNEL_URL,
+    NEWS_CHANNEL_URL, PROMO_TRIAL_PRICE,
 )
 from keyboards import (
     back_to_menu_kb, balance_kb, captcha_kb, chanbonus_kb, connection_kb, devices_kb, flag,
@@ -195,11 +195,32 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot):
         return
     if is_new:
         await message.answer(texts.choose_language(), reply_markup=language_kb())
-    else:
-        lang = await _lang(message.from_user.id)
-        await message.answer(texts.welcome(lang), reply_markup=main_menu_kb(lang))
-        await _ensure_reply_menu(message, lang)
+        return
 
+    lang = await _lang(message.from_user.id)
+    rate = await _rate(lang)
+
+    if args == "trialpromo":
+        user2 = await db.get_user(message.from_user.id)
+        if user2 and user2["trial_used"]:
+            await message.answer(texts.trial_used(lang), reply_markup=plans_kb(lang, rate))
+            return
+        if not await _trial_sub_ok(bot, message.from_user.id):
+            await message.answer(texts.trial_need_sub(lang=lang), reply_markup=_trial_sub_kb(lang))
+            return
+        regions = await db.trial_regions()
+        if regions:
+            await message.answer(texts.trial_promo_intro(PROMO_TRIAL_PRICE, lang),
+                                 reply_markup=trial_promo_locations_kb(regions, lang))
+            return
+
+    if args == "buy":
+        await message.answer(_tt(lang, "🛒 <b>Выбери тариф:</b>", "🛒 <b>Choose a plan:</b>"),
+                             reply_markup=plans_kb(lang, rate))
+        return
+
+    await message.answer(texts.welcome(lang), reply_markup=main_menu_kb(lang))
+    await _ensure_reply_menu(message, lang)
 
 _CAPTCHA_EMOJIS = ["🐶", "🐱", "🦊", "🐰", "🐼", "🐨", "🦁", "🐸", "🐵", "🦄"]
 
@@ -972,6 +993,60 @@ async def cb_trialloc(call: CallbackQuery, bot: Bot):
         )
     )
 
+
+@router.callback_query(F.data == "trialpromo")
+async def cb_trialpromo(call: CallbackQuery, bot: Bot):
+    lang = await _lang(call.from_user.id)
+    rate = await _rate(lang)
+    user = await db.get_user(call.from_user.id)
+    if user and user["trial_used"]:
+        await _edit(call, texts.trial_used(lang), plans_kb(lang, rate))
+        await call.answer()
+        return
+    if not await _trial_sub_ok(bot, call.from_user.id):
+        await _edit(call, texts.trial_need_sub(lang=lang), _trial_sub_kb(lang))
+        await call.answer()
+        return
+    regions = await db.trial_regions()
+    if not regions:
+        await call.answer(_tt(lang, "😔 Сервера пока не готовы.", "😔 No servers ready yet."), show_alert=True)
+        return
+    await _edit(call, texts.trial_promo_intro(PROMO_TRIAL_PRICE, lang), trial_promo_locations_kb(regions, lang))
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("trialpromoloc:"))
+async def cb_trialpromoloc(call: CallbackQuery, bot: Bot):
+    lang = await _lang(call.from_user.id)
+    region = call.data.split(":", 1)[1]
+
+    if not await _trial_sub_ok(bot, call.from_user.id):
+        await call.answer(_tt(lang, "Сначала подпишись на канал.", "Please subscribe to the channel first."), show_alert=True)
+        return
+
+    user = await db.get_user(call.from_user.id)
+    if user and user["trial_used"]:
+        await call.answer(_tt(lang, "Пробный период уже использован.", "Trial already used."), show_alert=True)
+        return
+
+    reserved = await db.reserve_trial(region, call.from_user.id)
+    if not reserved:
+        await call.answer(_tt(lang, "😔 Сервер закончился, выбери другой.", "😔 Out of stock, pick another."), show_alert=True)
+        return
+
+    config_ids = [c["id"] for c in reserved]
+    order_id = await db.create_order(
+        call.from_user.id, "standard", 1, "trial", region, config_ids,
+        PROMO_TRIAL_PRICE, 0, PROMO_TRIAL_PRICE,
+    )
+    await call.answer()
+    await call.message.answer(
+        _tt(lang, f"✨ <b>Пробный доступ на 3 дня</b>\n{texts.LINE}\n"
+                  f"📍 {texts.region_name(region, lang)}\n💰 К оплате: <b>{PROMO_TRIAL_PRICE} ₽</b>",
+            f"✨ <b>3-day trial</b>\n{texts.LINE}\n"
+            f"📍 {texts.region_name(region, lang)}\n💰 To pay: <b>{PROMO_TRIAL_PRICE} ₽</b>")
+    )
+    await _offer_payment(call.message, bot, call.from_user.id, order_id, lang)
 
 # ============ БАЛАНС ============
 
@@ -1926,6 +2001,9 @@ async def _fulfill(target: Message, user_id: int, order: dict, bot: Bot, paid_mo
             ),
             reply_markup=howto_kb(lang)
         )
+
+    if order.get("period") == "trial":
+        await db.mark_trial_used(user_id)
 
     applied, _region = await db.apply_bonus(user_id)
 
