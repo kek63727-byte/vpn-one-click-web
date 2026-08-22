@@ -279,6 +279,16 @@ def trial_locations_kb(regions, lang="ru"):
     kb.adjust(*sizes)
     return kb.as_markup()
 
+def trial_promo_locations_kb(regions, lang="ru"):
+    kb = InlineKeyboardBuilder()
+    regs = [r for r in regions if not r[1]]
+    for region, prem, free in regs:
+        kb.button(text=f"{flag(region)} {region_name(region, lang)}", callback_data=f"trialpromoloc:{region}")
+    kb.button(text=_t(lang, "⬅️ В главное меню", "⬅️ Main menu"), callback_data="menu")
+    n = len(regs)
+    sizes = [2] * (n // 2) + ([1] if n % 2 else []) + [1]
+    kb.adjust(*sizes)
+    return kb.as_markup()
 
 def referral_kb(lang="ru"):
     kb = InlineKeyboardBuilder()
