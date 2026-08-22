@@ -4,6 +4,7 @@ import asyncio
 import csv
 import io
 import logging
+from config import PERIOD_DAYS, PLAN_ORDER, PLANS, TRIAL_DAYS
 
 from aiogram import Bot, F, Router
 from aiogram.filters import Command, CommandObject
@@ -16,7 +17,6 @@ import db
 import store
 import ab
 import texts
-from config import PERIOD_DAYS, PLAN_ORDER, PLANS
 from filters import IsAdmin
 
 router = Router()
@@ -83,6 +83,7 @@ def panel_kb():
     kb.button(text="🌍 Серверы", callback_data="ap:servers")
     kb.button(text="➕ Добавить серверы", callback_data="ap:add")
     kb.button(text="📲 Добавить VLESS", callback_data="ap:addvless")
+    kb.button(text="🧪 VLESS в триал", callback_data="ap:addvlesstrial")
     kb.button(text="🗑 Удалить серверы", callback_data="ap:del")
     kb.button(text="🎟 Промокоды", callback_data="ap:promo")
     kb.button(text="📣 Рассылка", callback_data="ap:bcast")
@@ -97,7 +98,7 @@ def panel_kb():
     kb.button(text="🧪 A/B", callback_data="ap:ab")
     kb.button(text="📦 Закупки", callback_data="ap:restock")
     kb.button(text="🔄 Обновить", callback_data="ap:home")
-    kb.adjust(2, 2, 2, 2, 2, 2, 2, 2, 2)
+    kb.adjust(2, 2, 2, 2, 2, 2, 2, 2, 2, 1)
     return kb.as_markup()
 
 
@@ -422,22 +423,10 @@ async def add_text(message: Message, state: FSMContext):
 
 # ---- добавление VLESS (happ) ----
 
-async def _addvless_pick_kb():
-    rows = await db.catalog_with_stock()
-    kb = InlineKeyboardBuilder()
-    for r in rows:
-        star = "⭐️" if r["is_premium"] else "▫️"
-        kb.button(text=f"{star} {r['region']} (🟢{r['free']})", callback_data=f"vlesspick:{r['region']}")
-    kb.button(text="✏️ Другой регион (ввести вручную)", callback_data="ap:addvlesstype")
-    kb.button(text="⬅️ В админку", callback_data="ap:home")
-    kb.adjust(2)
-    return kb.as_markup()
-
-
 @router.callback_query(F.data == "ap:addvless")
 async def ap_add_vless(call: CallbackQuery, state: FSMContext):
     await state.clear()
-    kb = await _addvless_pick_kb()
+    kb = await _addvless_pick_kb("paid")
     await call.message.edit_text(
         "📲 <b>Добавление VLESS (happ)</b>\n\n"
         "Выбери регион из каталога, в который заливаешь JSON-конфиги для happ. "
@@ -447,15 +436,46 @@ async def ap_add_vless(call: CallbackQuery, state: FSMContext):
     await call.answer()
 
 
-async def _start_vless_upload(target, state: FSMContext, region: str):
+@router.callback_query(F.data == "ap:addvlesstrial")
+async def ap_add_vless_trial(call: CallbackQuery, state: FSMContext):
+    await state.clear()
+    kb = await _addvless_pick_kb("trial")
+    await call.message.edit_text(
+        "🧪 <b>VLESS в триал-пул</b>\n\n"
+        f"Выбери регион для пробных VLESS-конфигов (happ). Их получают только "
+        f"в бесплатном пробном периоде ({TRIAL_DAYS} дн.).",
+        reply_markup=kb)
+    await call.answer()
+
+
+async def _addvless_pick_kb(mode: str = "paid"):
+    rows = await db.catalog_with_stock()
+    kb = InlineKeyboardBuilder()
+    prefix = "vlesstpick" if mode == "trial" else "vlesspick"
+    for r in rows:
+        star = "⭐️" if r["is_premium"] else "▫️"
+        kb.button(text=f"{star} {r['region']} (🟢{r['free']})", callback_data=f"{prefix}:{r['region']}")
+    if mode == "paid":
+        kb.button(text="🧪 В триал-пул (VLESS)", callback_data="ap:addvlesstrial")
+        kb.button(text="✏️ Другой регион (ввести вручную)", callback_data="ap:addvlesstype")
+    else:
+        kb.button(text="✏️ Другой регион (ввести вручную)", callback_data="ap:addvlesstrialtype")
+        kb.button(text="⬅️ К обычным регионам", callback_data="ap:addvless")
+    kb.button(text="⬅️ В админку", callback_data="ap:home")
+    kb.adjust(2)
+    return kb.as_markup()
+
+
+async def _start_vless_upload(target, state: FSMContext, region: str, trial: bool = False):
     await state.set_state(AddVless.source)
-    await state.update_data(region=region, count=0)
+    await state.update_data(region=region, count=0, trial=trial)
     kb = InlineKeyboardBuilder()
     kb.button(text="⏭ Без источника", callback_data="ap:vlesssrcskip")
     kb.button(text="⬅️ В админку", callback_data="ap:home")
     kb.adjust(1)
+    tag = " (🧪 TRIAL)" if trial else ""
     text = (
-        f"📲 Регион: <b>{region}</b>\n\n"
+        f"📲 Регион: <b>{region}</b>{tag}\n\n"
         "👤 С какого <b>аккаунта</b> ты берёшь эти конфиги? Напиши имя/метку "
         "(например <code>acc_1</code>) — увидишь её при замене.\n\n"
         "Или нажми «⏭ Без источника»."
@@ -470,18 +490,35 @@ async def _start_vless_upload(target, state: FSMContext, region: str):
 @router.callback_query(F.data.startswith("vlesspick:"))
 async def add_vless_pick(call: CallbackQuery, state: FSMContext):
     region = call.data.split(":", 1)[1]
-    await _start_vless_upload(call, state, region)
+    await _start_vless_upload(call, state, region, trial=False)
+
+
+@router.callback_query(F.data.startswith("vlesstpick:"))
+async def add_vless_trial_pick(call: CallbackQuery, state: FSMContext):
+    region = call.data.split(":", 1)[1]
+    await _start_vless_upload(call, state, region, trial=True)
 
 
 @router.callback_query(F.data == "ap:addvlesstype")
 async def ap_add_vless_type(call: CallbackQuery, state: FSMContext):
     await state.set_state(AddVless.region)
+    await state.update_data(trial=False)
     await call.message.edit_text(
         "✏️ <b>Свой регион для VLESS</b>\n\nНапиши название региона.\n\n"
         "Или /cancel для отмены.",
         reply_markup=back_kb())
     await call.answer()
 
+
+@router.callback_query(F.data == "ap:addvlesstrialtype")
+async def ap_add_vless_trial_type(call: CallbackQuery, state: FSMContext):
+    await state.set_state(AddVless.region)
+    await state.update_data(trial=True)
+    await call.message.edit_text(
+        "✏️ <b>Свой регион для триал-VLESS</b>\n\nНапиши название региона.\n\n"
+        "Или /cancel для отмены.",
+        reply_markup=back_kb())
+    await call.answer()
 
 @router.message(AddVless.region, Command("cancel"))
 async def add_vless_region_cancel(message: Message, state: FSMContext):
@@ -495,8 +532,8 @@ async def add_vless_region_typed(message: Message, state: FSMContext):
     if not region:
         await message.answer("Укажи название региона.")
         return
-    await _start_vless_upload(message, state, region)
-
+    data = await state.get_data()
+    await _start_vless_upload(message, state, region, trial=data.get("trial", False))
 
 @router.callback_query(F.data == "ap:vlesssrcskip")
 async def ap_vless_src_skip(call: CallbackQuery, state: FSMContext):
@@ -522,12 +559,13 @@ async def _ask_vless_configs(target, state: FSMContext):
     await state.set_state(AddVless.waiting)
     src = data.get("source")
     src_line = f"👤 Источник: <b>{src}</b>\n" if src else ""
+    trial_line = "🧪 <b>Это ТРИАЛ-пул</b> — конфиги получают только на пробном периоде.\n" if data.get("trial") else ""
     kb = InlineKeyboardBuilder()
     kb.button(text="✅ Готово", callback_data="ap:vlessdone")
     kb.button(text="⬅️ В админку", callback_data="ap:home")
     kb.adjust(1)
     await target.answer(
-        f"📲 Регион: <b>{data.get('region')}</b>\n{src_line}\n"
+        f"📲 Регион: <b>{data.get('region')}</b>\n{trial_line}{src_line}\n"
         "Присылай <code>.json</code> файлы (или текст) с конфигом для happ — "
         "каждое сообщение = 1 файл на одного пользователя.\n"
         "Невалидный JSON пропущу.\n"
@@ -574,7 +612,7 @@ async def add_vless_doc(message: Message, state: FSMContext, bot: Bot):
     if not is_valid_vless(text):
         await message.answer("⏭ Пропущен: это не похоже на рабочий VLESS-JSON конфиг (в продажу не пойдёт).")
         return
-    await db.add_vless_config(data["region"], text, data.get("source"))
+    await db.add_vless_config(data["region"], text, data.get("source"), data.get("trial", False))
     count = data.get("count", 0) + 1
     await state.update_data(count=count)
     servers = vless_server_count(text)
@@ -588,12 +626,11 @@ async def add_vless_text(message: Message, state: FSMContext):
     if not is_valid_vless(text):
         await message.answer("⏭ Пропущен: это не похоже на рабочий VLESS-JSON конфиг (в продажу не пойдёт).")
         return
-    await db.add_vless_config(data["region"], text, data.get("source"))
+    await db.add_vless_config(data["region"], text, data.get("source"), data.get("trial", False))
     count = data.get("count", 0) + 1
     await state.update_data(count=count)
     servers = vless_server_count(text)
     await message.answer(f"➕ Добавлен #{count} ({data['region']}, серверов внутри: {servers}). /done — закончить.")
-
 
 # ---- удаление серверов ----
 
