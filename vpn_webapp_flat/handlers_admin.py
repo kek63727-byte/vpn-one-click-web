@@ -75,6 +75,10 @@ class Restock(StatesGroup):
     configs = State()
 
 
+class ReportReply(StatesGroup):
+    waiting = State()
+
+
 # ============ ПАНЕЛЬ ============
 
 def panel_kb():
@@ -2250,3 +2254,154 @@ async def cb_region_change(call: CallbackQuery, bot: Bot):
         await call.message.edit_text(call.message.html_text + f"\n\n✅ <b>Одобрено → {best}.</b>")
     except Exception:
         pass
+
+# ============ ЗАЯВКИ НА ЗАМЕНУ КОНФИГА (report из мини-аппы) ============
+
+REPLACE_REASONS = [
+    ('confirm_bad', '❌ Конфиг реально не работает'),
+    ('bad_speed',   '⚡ Медленный сервер — меняем'),
+    ('server_down', '🔧 Сервер упал, нужен новый'),
+    ('other',       '🔁 Другая причина замены'),
+]
+
+
+@router.callback_query(F.data.startswith("rep:auto:"))
+async def cb_rep_auto(call: CallbackQuery):
+    report_id = int(call.data.split(":")[2])
+    kb = InlineKeyboardBuilder()
+    for code, label in REPLACE_REASONS:
+        kb.button(text=label, callback_data=f"rep:doauto:{report_id}:{code}")
+    kb.button(text="← Назад", callback_data=f"rep:back:{report_id}")
+    kb.adjust(1)
+    await call.message.edit_reply_markup(reply_markup=kb.as_markup())
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("rep:doauto:"))
+async def cb_rep_doauto(call: CallbackQuery, bot: Bot):
+    _, _, report_id, reason_code = call.data.split(":")
+    report_id = int(report_id)
+    rep = await db.get_report(report_id)
+    if not rep or rep["status"] != "new":
+        await call.answer("Заявка уже обработана.", show_alert=True)
+        return
+    await call.answer("⏳ Ищу конфиг на складе…")
+
+    new_cfg = await db.replace_config(rep["config_id"], rep["region"], reason_code)
+    if not new_cfg:
+        await call.message.answer(
+            f"❌ Нет свободных конфигов в регионе <b>{rep['region']}</b>. "
+            f"Загрузи конфиги или используй «📤 Заменить вручную».")
+        return
+
+    await db.set_report_status(report_id, "resolved")
+    ulang = await db.get_lang(rep["user_id"])
+    import handlers_user
+    try:
+        await bot.send_message(rep["user_id"], "✅ Твой конфиг заменён — новый прикреплён ниже.")
+        await handlers_user.send_config_to(bot, rep["user_id"], new_cfg, ulang)
+    except Exception:
+        pass
+
+    reason_label = dict(REPLACE_REASONS).get(reason_code, reason_code)
+    try:
+        await call.message.edit_text(
+            call.message.html_text + f"\n\n✅ <b>Заменено.</b> Причина: {reason_label}",
+            reply_markup=None)
+    except Exception:
+        pass
+
+
+@router.callback_query(F.data.startswith("rep:manual:"))
+async def cb_rep_manual(call: CallbackQuery, state: FSMContext):
+    report_id = int(call.data.split(":")[2])
+    rep = await db.get_report(report_id)
+    if not rep or rep["status"] != "new":
+        await call.answer("Заявка уже обработана.", show_alert=True)
+        return
+    await state.set_state(ReportReply.waiting)
+    await state.update_data(report_id=report_id, config_id=rep["config_id"], user_id=rep["user_id"])
+    await call.message.answer(
+        f"📤 Пришли новый конфиг для пользователя <code>{rep['user_id']}</code> "
+        f"(регион {rep['region']}) — файлом или текстом.\n/cancel — отмена.")
+    await call.answer()
+
+
+@router.message(ReportReply.waiting, Command("cancel"))
+async def rep_manual_cancel(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Отменено.", reply_markup=panel_kb())
+
+
+async def _rep_manual_finish(message: Message, state: FSMContext, bot: Bot, config_text: str):
+    data = await state.get_data()
+    cfg = await db.get_config(data["config_id"])
+    is_vless = cfg and cfg.get("config_type") == "vless"
+    valid = is_valid_vless(config_text) if is_vless else is_valid_wg(config_text)
+    if not valid:
+        await message.answer("⚠️ Это не похоже на рабочий конфиг. Пришли ещё раз, или /cancel.")
+        return  # остаёмся в том же состоянии, данные заявки не теряем
+
+    await state.clear()
+    new_cfg = await db.manual_replace_config(data["config_id"], config_text)
+    if not new_cfg:
+        await message.answer("⚠️ Не удалось заменить — исходный конфиг не найден.")
+        return
+    await db.set_report_status(data["report_id"], "resolved")
+
+    ulang = await db.get_lang(data["user_id"])
+    import handlers_user
+    try:
+        await bot.send_message(data["user_id"], "✅ Твой конфиг заменён — новый прикреплён ниже.")
+        await handlers_user.send_config_to(bot, data["user_id"], new_cfg, ulang)
+    except Exception:
+        pass
+    await message.answer("✅ Конфиг отправлен пользователю, заявка закрыта.", reply_markup=panel_kb())
+
+
+@router.message(ReportReply.waiting, F.document)
+async def rep_manual_doc(message: Message, state: FSMContext, bot: Bot):
+    buf = await bot.download(message.document)
+    text = buf.read().decode(errors="replace").strip()
+    await _rep_manual_finish(message, state, bot, text)
+
+
+@router.message(ReportReply.waiting, F.text, ~F.text.startswith("/"))
+async def rep_manual_text(message: Message, state: FSMContext, bot: Bot):
+    await _rep_manual_finish(message, state, bot, message.text.strip())
+
+
+@router.callback_query(F.data.startswith("rep:reject:"))
+async def cb_rep_reject(call: CallbackQuery, bot: Bot):
+    report_id = int(call.data.split(":")[2])
+    rep = await db.get_report(report_id)
+    if not rep or rep["status"] != "new":
+        await call.answer("Заявка уже обработана.", show_alert=True)
+        return
+    await db.set_report_status(report_id, "rejected")
+    try:
+        await bot.send_message(
+            rep["user_id"],
+            "ℹ️ Мы проверили конфиг — он работает корректно. "
+            "Если проблема не исчезла, напиши в поддержку.")
+    except Exception:
+        pass
+    await call.answer("Заявка отклонена")
+    try:
+        await call.message.edit_text(
+            call.message.html_text + "\n\n❌ <b>Отклонено.</b> Пользователь уведомлён.",
+            reply_markup=None)
+    except Exception:
+        pass
+
+
+@router.callback_query(F.data.startswith("rep:back:"))
+async def cb_rep_back(call: CallbackQuery):
+    report_id = int(call.data.split(":")[2])
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✅ Заменить авто", callback_data=f"rep:auto:{report_id}")
+    kb.button(text="📤 Заменить вручную", callback_data=f"rep:manual:{report_id}")
+    kb.button(text="❌ Отклонить", callback_data=f"rep:reject:{report_id}")
+    kb.adjust(2, 1)
+    await call.message.edit_reply_markup(reply_markup=kb.as_markup())
+    await call.answer()
