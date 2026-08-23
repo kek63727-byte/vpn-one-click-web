@@ -721,14 +721,20 @@ async def cb_freeze_do(call: CallbackQuery):
         await call.answer(_tt(lang, "Подписка не найдена.", "Subscription not found."), show_alert=True)
         return
     # лимит: не чаще одной заморозки в FREEZE_COOLDOWN_DAYS дней
-    ok, nxt = await db.can_freeze(cid, FREEZE_COOLDOWN_DAYS)
+        ok, nxt = await db.can_freeze(cid, FREEZE_COOLDOWN_DAYS)
     if not ok:
         until = (nxt or "")[:10]
+        await db.log_event(call.from_user.id, "freeze_failed",
+                            meta={"reason": "cooldown", "region": cfg["region"], "config_id": cid},
+                            source="bot")
         await _edit(call, texts.freeze_cooldown(until, lang), back_to_menu_kb(lang))
         await call.answer()
         return
     bal = await db.get_balance(call.from_user.id)
     if bal < FREEZE_PRICE:
+        await db.log_event(call.from_user.id, "freeze_failed", amount=FREEZE_PRICE,
+                            meta={"reason": "need_topup", "region": cfg["region"], "balance": bal},
+                            source="bot")
         await _edit(call, texts.freeze_need_balance(
             texts.money(FREEZE_PRICE, lang, rate), texts.money(bal, lang, rate), lang),
             balance_kb(lang))
@@ -739,6 +745,9 @@ async def cb_freeze_do(call: CallbackQuery):
         return
     new_exp = await db.extend_config(cid, FREEZE_DAYS)
     await db.mark_frozen(cid)
+    await db.log_event(call.from_user.id, "freeze", amount=FREEZE_PRICE,
+                        meta={"region": cfg["region"], "config_id": cid, "days": FREEZE_DAYS},
+                        source="bot")
     region = texts.region_name(cfg["region"], lang)
     await _edit(call, texts.freeze_done(region, new_exp.strftime("%d.%m.%Y"), lang),
                 back_to_menu_kb(lang))
@@ -1204,6 +1213,8 @@ async def _credit_topup(target, bot, user_id, topup_id, method_name, ref, lang, 
     if bonus > 0:
         await db.add_balance(user_id, bonus)
     await db.record_payment(user_id, 0, topup["amount_rub"], method_name, str(ref))
+        await db.log_event(user_id, "topup_paid", amount=topup["amount_rub"],
+                        meta={"method": method_name, "topup_id": topup_id}, source="bot")
     rate = await _rate(lang)
     bal = await db.get_balance(user_id)
     # если был отложенный заказ (держим сервер) — предложим его завершить
@@ -1958,8 +1969,14 @@ async def on_paid(message: Message, bot: Bot):
 
 # ============ ВЫДАЧА ============
 
-async def _fulfill(target: Message, user_id: int, order: dict, bot: Bot, paid_money: bool, lang: str = "ru"):
+async def _fulfill(target: Message, user_id: int, order: dict, bot: Bot, paid_money: bool, lang: str = "ru", source: str = "bot"):
     await db.set_order_status(order["id"], "paid")
+
+    await db.log_event(user_id, "order_paid", amount=order.get("rub"),
+                        meta={"plan": order.get("plan"), "devices": order.get("devices"),
+                              "period": order.get("period"), "region": order.get("region"),
+                              "order_id": order.get("id"), "discount": order.get("discount")},
+                        source=source)
 
     if order.get("discount", 0) > 0:
         await db.use_ref_balance(user_id, order["discount"])
