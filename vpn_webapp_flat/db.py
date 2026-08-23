@@ -179,7 +179,7 @@ async def init_db():
             ("plan", "plan TEXT"), ("period", "period TEXT"),
         ]:
             await _ensure_column(db, "configs", col, ddl)
-          for col, ddl in [
+        for col, ddl in [          # ← 8 スペースに修正
             ("referred_by", "referred_by INTEGER"),
             ("trial_used", "trial_used INTEGER NOT NULL DEFAULT 0"),
             ("bonus_days", "bonus_days INTEGER NOT NULL DEFAULT 0"),
