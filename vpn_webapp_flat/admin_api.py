@@ -172,6 +172,9 @@ async def admin_user_action(request):
             return web.json_response({"error": "no_order"}, status=404)
         await db.add_balance(uid, order["rub"])
         await db.set_order_status(order["id"], "refunded")
+        await db.log_event(uid, "refund", amount=order["rub"],
+                            meta={"order_id": order["id"], "plan": order.get("plan")},
+                            source="admin")
     elif action == "message":
         if bot and val:
             try:
@@ -447,85 +450,38 @@ async def admin_restock_add_configs(request):
 
 @routes.post("/admin/transactions")
 async def admin_transactions(request):
-    """Лента пополнений + покупок с деталями по каждому юзеру."""
+    """Единая лента событий: счета, оплаты, заморозки, отказы, рефанды —
+    по всем пользователям, из бота, мини-аппа и вебхука."""
     _, body = await _admin_auth(request)
-    limit = min(int(body.get("limit") or 60), 200)
-    kind = body.get("kind") or "all"  # all | topup | order
+    limit = min(int(body.get("limit") or 80), 300)
+    kind = body.get("kind") or "all"
+
+    items = await db.list_events(limit=limit, kind=kind)
+    summ = await db.events_summary()
+
+    def _s(k):
+        d = summ.get(k) or {}
+        return d.get("count", 0), d.get("sum", 0)
+
+    topup_cnt, topup_sum = _s("topup_paid")
+    order_cnt, order_sum = _s("order_paid")
+    stats = await db.stats_extended()
 
     import aiosqlite
-    from config import DB_PATH
-
-    items = []
-    async with aiosqlite.connect(DB_PATH) as dbx:
-        dbx.row_factory = aiosqlite.Row
-
-        if kind in ("all", "topup"):
-            cur = await dbx.execute(
-                "SELECT t.id, t.user_id, t.amount_rub, t.method, t.status, t.created_at, "
-                "u.username, u.full_name, COALESCE(u.balance_rub,0) balance_rub "
-                "FROM topups t LEFT JOIN users u ON u.user_id=t.user_id "
-                "WHERE t.status='paid' ORDER BY t.created_at DESC LIMIT ?", (limit,))
-            for r in await cur.fetchall():
-                items.append({
-                    "kind": "topup", "id": r["id"],
-                    "user_id": r["user_id"], "username": r["username"],
-                    "full_name": r["full_name"], "balance_rub": r["balance_rub"],
-                    "amount": r["amount_rub"], "method": (r["method"] or "—").upper(),
-                    "at": r["created_at"],
-                })
-
-        if kind in ("all", "order"):
-            cur = await dbx.execute(
-                "SELECT o.id, o.user_id, o.plan, o.devices, o.period, o.region, "
-                "o.config_ids, o.rub, o.discount, o.full_rub, o.promo, o.created_at, "
-                "u.username, u.full_name, COALESCE(u.balance_rub,0) balance_rub, "
-                "(SELECT COUNT(*) FROM configs c "
-                " WHERE c.user_id=o.user_id AND c.status='sold' AND c.is_trial=0) active_configs "
-                "FROM orders o LEFT JOIN users u ON u.user_id=o.user_id "
-                "WHERE o.status='paid' ORDER BY o.created_at DESC LIMIT ?", (limit,))
-            for r in await cur.fetchall():
-                cfg_ids = [x for x in (r["config_ids"] or "").split(",") if x]
-                items.append({
-                    "kind": "order", "id": r["id"],
-                    "user_id": r["user_id"], "username": r["username"],
-                    "full_name": r["full_name"], "balance_rub": r["balance_rub"],
-                    "amount": r["rub"], "full_rub": r["full_rub"] or r["rub"],
-                    "discount": r["discount"] or 0, "promo": r["promo"],
-                    "plan": r["plan"] or "standard", "devices": r["devices"],
-                    "period": r["period"], "region": r["region"],
-                    "config_count": len(cfg_ids),
-                    "active_configs": r["active_configs"],
-                    "at": r["created_at"],
-                })
-
-        # сводка
-        row = await (await dbx.execute(
-            "SELECT COUNT(*), COALESCE(SUM(amount_rub),0) FROM topups WHERE status='paid'")).fetchone()
-        topup_cnt, topup_sum = row[0], row[1]
-
-        row = await (await dbx.execute(
-            "SELECT COUNT(*), COALESCE(SUM(rub),0) FROM orders WHERE status='paid'")).fetchone()
-        order_cnt, order_sum = row[0], row[1]
-
-        active_cfg = (await (await dbx.execute(
-            "SELECT COUNT(*) FROM configs WHERE status='sold' AND is_trial=0")).fetchone())[0]
-        active_trial = (await (await dbx.execute(
+    from config import DB_PATH as _DB_PATH
+    async with aiosqlite.connect(_DB_PATH) as dbx:
+        active_trials = (await (await dbx.execute(
             "SELECT COUNT(*) FROM configs WHERE status='sold' AND is_trial=1")).fetchone())[0]
-        total_bal = (await (await dbx.execute(
-            "SELECT COALESCE(SUM(balance_rub),0) FROM users")).fetchone())[0]
-
-    items.sort(key=lambda x: x.get("at") or "", reverse=True)
 
     return web.json_response({
-        "items": items[:limit],
+        "items": items,
         "summary": {
             "topup_cnt": topup_cnt, "topup_sum": topup_sum,
             "order_cnt": order_cnt, "order_sum": order_sum,
-            "active_configs": active_cfg, "active_trials": active_trial,
-            "total_balance": total_bal,
+            "active_configs": stats["active_subs"], "active_trials": active_trials,
+            "total_balance": stats["total_balance"],
         },
     })
-
 # ═══════════════════════════════════════════════════════════════
 # ПАТЧ ДЛЯ admin_api.py — добавь этот блок в САМЫЙ НИЗ файла (после
 # раздела "10. ТРАНЗАКЦИИ", после последней функции admin_transactions).
