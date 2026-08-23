@@ -2525,7 +2525,8 @@ async def _do_replace(call: CallbackQuery, bot: Bot, config_id: int, region: str
         except Exception:
             pass
 
-            @router.message(F.video)
+
+@router.message(F.video)
 async def get_video_file_id(message: Message):
     if message.from_user.id not in ADMIN_IDS:
         return
