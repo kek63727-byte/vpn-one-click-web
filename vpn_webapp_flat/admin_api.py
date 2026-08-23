@@ -525,3 +525,105 @@ async def admin_transactions(request):
             "total_balance": total_bal,
         },
     })
+
+# ═══════════════════════════════════════════════════════════════
+# ПАТЧ ДЛЯ admin_api.py — добавь этот блок в САМЫЙ НИЗ файла (после
+# раздела "10. ТРАНЗАКЦИИ", после последней функции admin_transactions).
+# ВАЖНО: в оригинальном admin_api.py aiosqlite и DB_PATH импортируются
+# только ЛОКАЛЬНО внутри функции admin_transactions — на уровне модуля
+# их нет. Поэтому этот патч сам импортирует их наверху блока.
+# web / routes / _admin_auth уже есть в файле — их трогать не нужно.
+# ═══════════════════════════════════════════════════════════════
+
+import aiosqlite
+from config import DB_PATH
+
+
+_TEAM_ROLE_TITLES = {
+    "qa": "🛡 Тестировщик (QA)", "idea": "💡 Креатор идей", "hr": "👥 HR",
+    "dev": "💻 Разработчик", "design": "🎨 Дизайнер", "marketing": "📣 Маркетолог/SMM",
+    "other": "🧩 Другое",
+}
+_TEAM_EXP_TITLES = {
+    "none": "Без опыта", "lt1": "До 1 года", "1-3": "1–3 года", "3-5": "3–5 лет", "5plus": "5+ лет",
+}
+
+
+async def _team_ensure_table():
+    async with aiosqlite.connect(DB_PATH) as dbx:
+        await dbx.execute(
+            """
+            CREATE TABLE IF NOT EXISTS team_applications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL, username TEXT, full_name TEXT,
+                role TEXT NOT NULL, experience TEXT NOT NULL,
+                salary_from INTEGER, salary_to INTEGER, currency TEXT, payment_type TEXT,
+                comment TEXT, contact_tg TEXT NOT NULL,
+                resume_filename TEXT, resume_mime TEXT, resume_b64 TEXT,
+                status TEXT NOT NULL DEFAULT 'new', created_at TEXT NOT NULL
+            )
+            """
+        )
+        await dbx.commit()
+
+
+@routes.post("/admin/team_applications")
+async def admin_team_applications(request):
+    """Список анкет. body: {status: 'all'|'new'|'contacted'|'hired'|'rejected'}"""
+    _, body = await _admin_auth(request)
+    await _team_ensure_table()
+    status = body.get("status") or "all"
+
+    q = "SELECT * FROM team_applications"
+    params = ()
+    if status != "all":
+        q += " WHERE status=?"
+        params = (status,)
+    q += " ORDER BY created_at DESC LIMIT 200"
+
+    async with aiosqlite.connect(DB_PATH) as dbx:
+        dbx.row_factory = aiosqlite.Row
+        rows = [dict(r) for r in await (await dbx.execute(q, params)).fetchall()]
+        counts_row = await (await dbx.execute(
+            "SELECT status, COUNT(*) c FROM team_applications GROUP BY status"
+        )).fetchall()
+    counts = {r[0]: r[1] for r in counts_row}
+
+    for r in rows:
+        r["role_title"] = _TEAM_ROLE_TITLES.get(r["role"], r["role"])
+        r["experience_title"] = _TEAM_EXP_TITLES.get(r["experience"], r["experience"])
+        r.pop("resume_b64", None)  # не гоняем base64 в списке — только по запросу карточки
+
+    return web.json_response({"applications": rows, "counts": counts})
+
+
+@routes.post("/admin/team_applications/card")
+async def admin_team_application_card(request):
+    """Полная карточка заявки, включая base64 резюме (для скачивания)."""
+    _, body = await _admin_auth(request)
+    app_id = int(body.get("id"))
+    async with aiosqlite.connect(DB_PATH) as dbx:
+        dbx.row_factory = aiosqlite.Row
+        row = await (await dbx.execute(
+            "SELECT * FROM team_applications WHERE id=?", (app_id,)
+        )).fetchone()
+    if not row:
+        return web.json_response({"error": "not_found"}, status=404)
+    r = dict(row)
+    r["role_title"] = _TEAM_ROLE_TITLES.get(r["role"], r["role"])
+    r["experience_title"] = _TEAM_EXP_TITLES.get(r["experience"], r["experience"])
+    return web.json_response({"application": r})
+
+
+@routes.post("/admin/team_applications/status")
+async def admin_team_application_status(request):
+    """body: {id, status: 'new'|'contacted'|'hired'|'rejected'}"""
+    _, body = await _admin_auth(request)
+    app_id = int(body.get("id"))
+    status = body.get("status")
+    if status not in ("new", "contacted", "hired", "rejected"):
+        return web.json_response({"error": "bad_status"}, status=400)
+    async with aiosqlite.connect(DB_PATH) as dbx:
+        await dbx.execute("UPDATE team_applications SET status=? WHERE id=?", (status, app_id))
+        await dbx.commit()
+    return web.json_response({"ok": True})
