@@ -204,6 +204,8 @@ async def api_me(request):
     ref_stats = await db.referral_stats(user_id)
     ref_cash = await db.get_ref_cash(user_id)
 
+    offer_eligible = await db.webapp_offer_eligible(user_id)
+
     return web.json_response({
         "is_admin": user_id in ADMIN_IDS,
         "user_id": user_id,
@@ -215,6 +217,7 @@ async def api_me(request):
         "ref_invited": ref_stats.get("invited", 0),
         "ref_cash": ref_cash,
         "referral_code": str(user_id),
+        "special_offer": {"eligible": offer_eligible, "percent": 50},
     })
 
 
@@ -264,7 +267,23 @@ async def api_create_payment(request):
     # Цена считается ТОЛЬКО на сервере
     full = pay.price_rub(plan, devices, period)
     spent = await db.total_spent(user_id)
-    discount = full * pay.loyalty_percent_for(spent) // 100
+    loyalty_discount = full * pay.loyalty_percent_for(spent) // 100
+
+    # Приветственная/возвратная скидка мини-аппа — право на неё перепроверяем
+    # на сервере, клиентскому флагу не доверяем (иначе любой мог бы прислать
+    # use_special_offer=true и получить скидку без права на неё).
+    use_offer = bool(body.get("use_special_offer"))
+    offer_applied = False
+    if use_offer and await db.webapp_offer_eligible(user_id):
+        offer_discount = full * 50 // 100
+        if offer_discount > loyalty_discount:
+            discount = offer_discount
+            offer_applied = True
+        else:
+            discount = loyalty_discount
+    else:
+        discount = loyalty_discount
+
     to_pay = full - discount
     balance = await db.get_balance(user_id)
 
@@ -303,6 +322,9 @@ async def api_create_payment(request):
     order = await db.get_order(order_id)
     await handlers_user._fulfill(_TargetShim(user_id), user_id, order, bot,
                                   paid_money=False, lang=lang)
+
+    if offer_applied:
+        await db.mark_webapp_offer_used(user_id)
 
     new_balance = await db.get_balance(user_id)
     return web.json_response({"paid": True, "order_id": order_id, "balance": new_balance})
