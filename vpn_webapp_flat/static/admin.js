@@ -743,30 +743,86 @@ async function _adminRestockAddConfigs(id) {
 const _PERIOD_RU_TX = { month: '1 мес', '3month': '3 мес', '6month': '6 мес', year: '1 год' };
 const _PLAN_EMOJI   = { standard: '🛡', premium: '💎', ultimate: '⚡️' };
 
+const _TX_KIND = {
+  topup_invoice: { label: 'Выставлен счёт', color: 'orange', icon: 'i-receipt',    sign: ''  },
+  topup_paid:    { label: 'Пополнение',     color: 'green',  icon: 'i-arrow-send', sign: '+' },
+  order_paid:    { label: 'Покупка',        color: 'cyan',   icon: 'i-bag',        sign: '-' },
+  order_failed:  { label: 'Не оплачено',    color: 'red',    icon: 'i-ban',        sign: ''  },
+  freeze:        { label: 'Заморозка',      color: 'cyan',   icon: 'i-zap',        sign: '-' },
+  freeze_failed: { label: 'Заморозка ✗',    color: 'red',    icon: 'i-ban',        sign: ''  },
+  refund:        { label: 'Рефанд',         color: 'red',    icon: 'i-download',   sign: '+' },
+};
+const _TX_COLOR_VAR = { green: 'var(--green)', red: 'var(--red)', orange: 'var(--orange)', cyan: 'var(--cyan)', gray: 'var(--muted)' };
+const _TX_FILTERS = [
+  ['all', 'Все'], ['topup_paid', 'Пополнения'], ['order_paid', 'Покупки'],
+  ['freeze', 'Заморозки'], ['order_failed', 'Неудачные'],
+];
+const _TX_SOURCE_LABEL = { bot: 'бот', webapp: 'мини-апп', webhook: 'вебхук', admin: 'админ' };
+
+function _renderTxItem(item) {
+  const conf = _TX_KIND[item.kind] || { label: item.kind, color: 'gray', icon: 'i-receipt', sign: '' };
+  const name = item.full_name
+    ? `${item.full_name}${item.username ? ' · @' + item.username : ''}`
+    : (item.username ? '@' + item.username : 'ID ' + item.user_id);
+  const dt = (item.created_at || '').slice(0, 16).replace('T', ' ');
+  const m = item.meta || {};
+  let detail = '';
+
+  if (item.kind === 'topup_invoice' || item.kind === 'topup_paid') {
+    detail = m.method || '';
+  } else if (item.kind === 'order_paid') {
+    const emoji = _PLAN_EMOJI[m.plan] || '📦';
+    const period = _PERIOD_RU_TX[m.period] || m.period || '';
+    detail = `${emoji} ${m.plan || ''} · ${m.region || ''} · ${period} · ${m.devices || 1} устр`;
+  } else if (item.kind === 'order_failed') {
+    const reasons = { need_topup: 'не хватило баланса', need_topup_race: 'не хватило баланса', no_stock: 'нет серверов' };
+    detail = `${m.plan || ''} · ${m.region || ''} · ${reasons[m.reason] || m.reason || ''}`;
+  } else if (item.kind === 'freeze' || item.kind === 'freeze_failed') {
+    const reasons = { cooldown: 'кулдаун', need_topup: 'не хватило баланса', need_topup_race: 'не хватило баланса' };
+    detail = `${m.region || ''}${m.reason ? ' · ' + (reasons[m.reason] || m.reason) : ''}`;
+  } else if (item.kind === 'refund') {
+    detail = m.order_id ? `заказ #${m.order_id}` : '';
+  }
+
+  const amountText = item.amount ? `${conf.sign}${item.amount.toLocaleString('ru')} ₽` : '';
+  const colorVar = _TX_COLOR_VAR[conf.color] || _TX_COLOR_VAR.gray;
+
+  return `
+    <div class="adm-list-item" onclick="adminUserCard(${item.user_id})" style="border-left:3px solid ${colorVar};margin-bottom:7px;">
+      <div style="width:36px;height:36px;border-radius:11px;background:rgba(255,255,255,.06);color:${colorVar};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg class="icon" style="width:17px;height:17px;"><use href="#${conf.icon}"/></svg>
+      </div>
+      <div class="adm-list-info">
+        <div class="adm-list-name">${amountText ? amountText + ' — ' : ''}${name}</div>
+        <div class="adm-list-meta">${dt}${detail ? ' · ' + detail : ''}</div>
+        ${item.source ? `<div class="adm-list-meta" style="color:var(--dim);">через ${_TX_SOURCE_LABEL[item.source] || item.source}</div>` : ''}
+      </div>
+      <div class="adm-list-side">
+        <span class="adm-badge ${conf.color}">${conf.label}</span>
+        <div class="adm-chev"><svg class="icon"><use href="#i-chevron"/></svg></div>
+      </div>
+    </div>`;
+}
+
 async function adminTransactions(kind = 'all') {
   _showAdmin('stats', '💰 Транзакции', 'Загрузка…', _skeleton(6));
   const d = await _adminFetch('/admin/transactions', { kind });
   if (!d) return;
   const s = d.summary;
 
-  // ─── фильтры ───
-  const filters = ['all','topup','order'].map((k, i) => {
-    const label = ['Все','Пополнения','Покупки'][i];
-    return `<div class="adm-btn ${kind===k?'primary':'ghost'}"
-      style="flex:1;padding:9px 4px;font-size:11.5px;"
-      onclick="adminTransactions('${k}')">${label}</div>`;
-  }).join('');
+  const filters = _TX_FILTERS.map(([k, label]) =>
+    `<div class="adm-btn ${kind === k ? 'primary' : 'ghost'}" style="flex:1;padding:9px 4px;font-size:11px;" onclick="adminTransactions('${k}')">${label}</div>`
+  ).join('');
 
-  // ─── сводка ───
   const summaryHtml = `
     <div class="adm-grid-2" style="margin-bottom:14px;">
       <div class="adm-stat-card c-green">
-        <div class="adm-stat-value">${(s.topup_sum||0).toLocaleString('ru')} ₽</div>
+        <div class="adm-stat-value">${(s.topup_sum || 0).toLocaleString('ru')} ₽</div>
         <div class="adm-stat-label">Пополнено всего</div>
         <div style="font-size:10px;color:var(--muted);margin-top:2px;">${s.topup_cnt} операций</div>
       </div>
       <div class="adm-stat-card c-violet">
-        <div class="adm-stat-value">${(s.order_sum||0).toLocaleString('ru')} ₽</div>
+        <div class="adm-stat-value">${(s.order_sum || 0).toLocaleString('ru')} ₽</div>
         <div class="adm-stat-label">Продаж всего</div>
         <div style="font-size:10px;color:var(--muted);margin-top:2px;">${s.order_cnt} заказов</div>
       </div>
@@ -776,84 +832,22 @@ async function adminTransactions(kind = 'all') {
         <div style="font-size:10px;color:var(--muted);margin-top:2px;">+ ${s.active_trials} триалов</div>
       </div>
       <div class="adm-stat-card c-gold">
-        <div class="adm-stat-value">${(s.total_balance||0).toLocaleString('ru')} ₽</div>
+        <div class="adm-stat-value">${(s.total_balance || 0).toLocaleString('ru')} ₽</div>
         <div class="adm-stat-label">Баланс всех юзеров</div>
       </div>
     </div>`;
 
-  // ─── лента ───
   const listHtml = !d.items.length
-    ? `<div class="adm-empty"><svg><use href="#i-receipt"/></svg>Транзакций нет</div>`
-    : d.items.map(item => {
-        const name = item.full_name
-          ? `${item.full_name}${item.username ? ' · @'+item.username : ''}`
-          : (item.username ? '@'+item.username : 'ID '+item.user_id);
-        const dt = (item.at||'').slice(0,16).replace('T',' ');
-
-        if (item.kind === 'topup') {
-          return `
-            <div class="adm-list-item" onclick="adminUserCard(${item.user_id})"
-                 style="border-left:3px solid var(--green);margin-bottom:7px;">
-              <div style="width:36px;height:36px;border-radius:11px;
-                    background:rgba(34,197,94,.14);color:var(--green);
-                    display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-                <svg class="icon" style="width:17px;height:17px;"><use href="#i-arrow-send"/></svg>
-              </div>
-              <div class="adm-list-info">
-                <div class="adm-list-name">+${(item.amount||0).toLocaleString('ru')} ₽ — ${name}</div>
-                <div class="adm-list-meta">${dt} · ${item.method}</div>
-                <div class="adm-list-meta" style="color:var(--dim);">
-                  Баланс после: <b style="color:var(--text);">${item.balance_rub} ₽</b>
-                </div>
-              </div>
-              <div class="adm-list-side">
-                <span class="adm-badge green">депозит</span>
-                <div class="adm-chev"><svg class="icon"><use href="#i-chevron"/></svg></div>
-              </div>
-            </div>`;
-        }
-
-        // order
-        const emoji  = _PLAN_EMOJI[item.plan] || '📦';
-        const period = _PERIOD_RU_TX[item.period] || (item.period||'');
-        const planName = (item.plan||'').charAt(0).toUpperCase()+(item.plan||'').slice(1);
-        const discBadge = item.discount > 0
-          ? `<span class="adm-badge orange" style="margin-left:4px;">-${item.discount} ₽${item.promo ? ' · '+item.promo : ''}</span>`
-          : '';
-        return `
-          <div class="adm-list-item" onclick="adminUserCard(${item.user_id})"
-               style="border-left:3px solid var(--accent);margin-bottom:7px;">
-            <div style="width:36px;height:36px;border-radius:11px;
-                  background:rgba(124,58,237,.14);color:var(--accent2);
-                  display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-              <svg class="icon" style="width:17px;height:17px;"><use href="#i-bag"/></svg>
-            </div>
-            <div class="adm-list-info">
-              <div class="adm-list-name" style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;">
-                ${emoji} ${planName} · ${item.region} — ${name} ${discBadge}
-              </div>
-              <div class="adm-list-meta">
-                ${dt} · ${period} · ${item.devices} устр · <b style="color:var(--text);">${item.amount} ₽</b>
-              </div>
-              <div class="adm-list-meta" style="color:var(--dim);">
-                Конфигов куплено: <b style="color:var(--text);">${item.config_count}</b>
-                &nbsp;·&nbsp; Сейчас активно: <b style="color:${item.active_configs>0?'var(--green)':'var(--red)'};">${item.active_configs}</b>
-              </div>
-            </div>
-            <div class="adm-list-side">
-              <span class="adm-badge cyan">покупка</span>
-              <div class="adm-chev"><svg class="icon"><use href="#i-chevron"/></svg></div>
-            </div>
-          </div>`;
-      }).join('');
+    ? `<div class="adm-empty"><svg><use href="#i-receipt"/></svg>Событий нет</div>`
+    : d.items.map(_renderTxItem).join('');
 
   const html = `
-    <div style="display:flex;gap:6px;margin-bottom:14px;">${filters}</div>
+    <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;">${filters}</div>
     ${summaryHtml}
     <div class="adm-section-title">Лента · последние ${d.items.length}</div>
     ${listHtml}`;
 
-  _showAdmin('stats', '💰 Транзакции', `депозиты + покупки`, html);
+  _showAdmin('stats', '💰 Транзакции', 'счета · оплаты · заморозки · отказы', html);
 }
 
 // Регистрируем в роутере openAdmin
