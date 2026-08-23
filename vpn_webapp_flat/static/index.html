@@ -1884,10 +1884,12 @@ async function handleTopup() {
       showToast('❌ ' + data.error);
       return;
     }
-    if (data.payment_url) {
+        if (data.payment_url) {
       tg.openLink(data.payment_url);
-      // Следим за возвратом
-      pendingTopup = { topup_id: data.topup_id, method: data.method, invoice_id: data.invoice_id };
+      // Следим за возвратом — сохраняем в localStorage, чтобы пережить
+      // перезагрузку мини-аппа (WebView часто убивается при переходе
+      // в СБП/банковское приложение)
+      setPendingTopup({ topup_id: data.topup_id, method: data.method, invoice_id: data.invoice_id });
     }
   } catch (err) {
     document.getElementById('loadingOverlay').classList.remove('show');
@@ -1895,10 +1897,25 @@ async function handleTopup() {
   }
 }
 
+function setPendingTopup(data) {
+  pendingTopup = data;
+  try { localStorage.setItem('pending_topup_v1', JSON.stringify(data)); } catch (e) {}
+}
+function clearPendingTopup() {
+  pendingTopup = null;
+  try { localStorage.removeItem('pending_topup_v1'); } catch (e) {}
+}
+function restorePendingTopup() {
+  try {
+    const saved = localStorage.getItem('pending_topup_v1');
+    if (saved) pendingTopup = JSON.parse(saved);
+  } catch (e) {}
+}
+
 let pendingTopup = null;
 
 async function checkPendingTopup() {
-  if (!pendingTopup || !tg?.initData) return;
+  if (!pendingTopup || !tg?.initData) return false;
   try {
     const r = await fetch('/check_topup', {
       method: 'POST',
@@ -1912,13 +1929,15 @@ async function checkPendingTopup() {
     });
     const d = await r.json();
     if (d.status === 'paid') {
-      pendingTopup = null;
+      clearPendingTopup();
       userState.balance = d.balance;
       document.getElementById('balanceAmount').textContent = d.balance + ' ₽';
       showToast('✅ Баланс пополнен!');
       tg?.HapticFeedback?.notificationOccurred('success');
+      return true;
     }
   } catch (e) {}
+  return false;
 }
 
 // Проверяем оплату при возврате в апп
@@ -1929,6 +1948,13 @@ document.addEventListener('visibilitychange', () => {
     checkPendingTopup();
   }
 });
+
+// Подстраховка: параллельно с visibilitychange опрашиваем сервер каждые
+// 4 секунды, пока висит незавершённый топап — на случай если событие
+// видимости не сработало (бывает в некоторых WebView на iOS/Android).
+setInterval(() => {
+  if (pendingTopup) checkPendingTopup();
+}, 4000);
 
 // ══════════════════════ ПРОМОКОД ══════════════════════
 async function applyPromo() {
@@ -2231,6 +2257,12 @@ async function submitReport() {
 }
 
 // ══════════════════════ ЗАПУСК ══════════════════════
+// Восстанавливаем незавершённый топап (переживший перезагрузку WebView)
+// и сразу пытаемся его проверить — если оплата уже прошла, зачислим баланс
+// без ожидания действий пользователя.
+restorePendingTopup();
+if (pendingTopup) checkPendingTopup();
+
 // Загружаем данные с сервера при старте
 loadUserData();
 </script>
