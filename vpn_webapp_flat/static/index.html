@@ -1637,7 +1637,7 @@ function selectRegion(name) {
 // ══════════════════════ АКТУАЛЬНЫЕ ЦЕНЫ С СЕРВЕРА ══════════════════════
 async function loadPrices() {
   try {
-    const resp = await fetch('/prices');
+    const resp = await fetch('/prices', { cache: 'no-store' });
     if (!resp.ok) return;
     const data = await resp.json();
     if (data.plans) {
