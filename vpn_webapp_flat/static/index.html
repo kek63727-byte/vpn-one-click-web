@@ -527,6 +527,26 @@
   .offer-cta { position: relative; width: 100%; height: 52px; border-radius: 14px; border: none; background: linear-gradient(135deg, #f6c453, #fde68a); color: #241800; font-weight: 800; font-size: 15px; cursor: pointer; margin-bottom: 8px; }
   .offer-cta:active { transform: scale(0.98); }
   .offer-skip { position: relative; font-size: 12.5px; color: var(--muted); background: none; border: none; cursor: pointer; padding: 6px; }
+
+    /* FREEZE MODAL */
+  .freeze-overlay { display: none; position: fixed; inset: 0; z-index: 700; background: rgba(5,3,7,0.88); backdrop-filter: blur(10px); align-items: center; justify-content: center; padding: 24px; }
+  .freeze-overlay.show { display: flex; }
+  .freeze-card { position: relative; width: 100%; max-width: 340px; background: linear-gradient(165deg, #0f1f22, #0e0a16); border: 1px solid rgba(34,211,238,0.3); border-radius: 24px; padding: 28px 24px 24px; text-align: center; box-shadow: 0 24px 60px -12px rgba(34,211,238,0.3); overflow: hidden; }
+  .freeze-card::before { content: ''; position: absolute; inset: 0; background: radial-gradient(160% 120% at 50% -10%, rgba(34,211,238,0.18), transparent 55%); pointer-events: none; }
+  .freeze-icon-wrap { position: relative; width: 64px; height: 64px; margin: 0 auto 18px; border-radius: 18px; background: rgba(34,211,238,0.12); border: 1px solid rgba(34,211,238,0.3); display: flex; align-items: center; justify-content: center; }
+  .freeze-icon-wrap svg { width: 30px; height: 30px; color: var(--cyan); }
+  .freeze-title { position: relative; font-size: 17px; font-weight: 800; margin-bottom: 8px; }
+  .freeze-sub { position: relative; font-size: 13px; color: var(--muted); line-height: 1.55; margin-bottom: 6px; }
+  .freeze-sub b { color: var(--text); font-weight: 700; }
+  .freeze-price-row { position: relative; display: flex; justify-content: center; gap: 18px; margin: 16px 0 22px; }
+  .freeze-price-item { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .freeze-price-value { font-size: 20px; font-weight: 900; font-family: var(--mono); color: var(--cyan); }
+  .freeze-price-label { font-size: 10px; color: var(--muted); font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.5px; }
+  .freeze-actions-row { position: relative; display: flex; gap: 8px; }
+  .freeze-btn { flex: 1; height: 48px; border-radius: 13px; border: none; font-weight: 700; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .freeze-btn:active { transform: scale(0.97); }
+  .freeze-btn.cancel { background: var(--card); border: 1.5px solid var(--border); color: var(--dim); }
+  .freeze-btn.confirm { background: linear-gradient(135deg, #0891b2, #22d3ee); color: #04222b; box-shadow: 0 8px 24px -8px rgba(34,211,238,0.5); }
 </style>
 
 <style id="recruit-styles-block">
@@ -1109,6 +1129,33 @@
   </div>
 </div>
 
+<!-- FREEZE CONFIRM MODAL -->
+<div class="freeze-overlay" id="freezeOverlay">
+  <div class="freeze-card">
+    <div class="freeze-icon-wrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2v20M4.5 7l15 10M19.5 7l-15 10M2 12h20"/>
+      </svg>
+    </div>
+    <div class="freeze-title">Заморозить подписку?</div>
+    <div class="freeze-sub" id="freezeRegionText">Регион: <b>—</b></div>
+    <div class="freeze-price-row">
+      <div class="freeze-price-item">
+        <div class="freeze-price-value" id="freezeDaysValue">7</div>
+        <div class="freeze-price-label">дней</div>
+      </div>
+      <div class="freeze-price-item">
+        <div class="freeze-price-value" id="freezePriceValue">10 ₽</div>
+        <div class="freeze-price-label">стоимость</div>
+      </div>
+    </div>
+    <div class="freeze-actions-row">
+      <button class="freeze-btn cancel" onclick="hideFreezeModal()">Отмена</button>
+      <button class="freeze-btn confirm" onclick="confirmFreeze()">Заморозить</button>
+    </div>
+  </div>
+</div>
+
 <!-- HOWTO MODAL (in-app, onboarding style) -->
 <div class="howto-overlay" id="howtoOverlay">
   <div class="howto-ambient"></div>
@@ -1518,16 +1565,27 @@ function renderConnections() {
 }
 
 // ══════════════════════ ЗАМОРОЗКА ПОДПИСКИ ══════════════════════
+let freezePendingConfigId = null;
+
 function requestFreeze(configId, region) {
   if (!tg?.initData) { showToast('Открой мини-апп через бот'); return; }
-  const price = userState.freezePrice || 0;
-  const days = userState.freezeDays || 0;
-  const msg = `Заморозить подписку «${region}» на ${days} дн. за ${price} ₽?`;
-  if (tg?.showConfirm) {
-    tg.showConfirm(msg, (confirmed) => { if (confirmed) doFreeze(configId); });
-  } else if (confirm(msg)) {
-    doFreeze(configId);
-  }
+  freezePendingConfigId = configId;
+  document.getElementById('freezeRegionText').innerHTML = `Регион: <b>${region}</b>`;
+  document.getElementById('freezeDaysValue').textContent = userState.freezeDays || 0;
+  document.getElementById('freezePriceValue').textContent = (userState.freezePrice || 0) + ' ₽';
+  document.getElementById('freezeOverlay').classList.add('show');
+  tg?.HapticFeedback?.impactOccurred('light');
+}
+
+function hideFreezeModal() {
+  document.getElementById('freezeOverlay').classList.remove('show');
+  freezePendingConfigId = null;
+}
+
+function confirmFreeze() {
+  const configId = freezePendingConfigId;
+  hideFreezeModal();
+  if (configId != null) doFreeze(configId);
 }
 
 async function doFreeze(configId) {
