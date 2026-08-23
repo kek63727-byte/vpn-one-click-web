@@ -12,6 +12,8 @@ ADMIN_IDS = [
 DB_PATH = os.getenv("DB_PATH", "vpn_bot.db")
 ORDER_TTL_MIN = int(os.getenv("ORDER_TTL_MIN", "15"))
 
+CONNECT_VIDEO_FILE_ID = os.getenv("CONNECT_VIDEO_FILE_ID", "")
+
 BRAND = os.getenv("BRAND", "One Click VPN")
 SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "@oneclickvpnsupport")
 # Новостной канал (ссылка-приглашение). Показывается в меню и профиле.
