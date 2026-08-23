@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta, timezone
 
 import aiosqlite
+import json
 
 from config import DB_PATH, DEFAULT_REGION_CATALOG, LOW_STOCK_THRESHOLD, ORDER_TTL_MIN, PERIOD_DAYS
 
@@ -158,6 +159,18 @@ CREATE TABLE IF NOT EXISTS config_reports (
     created_at TEXT NOT NULL,
     resolved_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    kind TEXT NOT NULL,
+    amount INTEGER,
+    meta TEXT,
+    source TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_events_user ON events(user_id);
+CREATE INDEX IF NOT EXISTS idx_events_kind ON events(kind);
 
 CREATE INDEX IF NOT EXISTS idx_configs_rs ON configs(region, status);
 """
@@ -1072,7 +1085,46 @@ async def record_payment(user_id, order_id, amount, currency, charge_id):
         )
         await db.commit()
 
+# ---------- журнал событий (для админ-ленты транзакций) ----------
 
+async def log_event(user_id, kind, amount=None, meta=None, source="webapp"):
+    """kind: topup_invoice, topup_paid, order_paid, order_failed,
+    freeze, freeze_failed, refund. source: bot | webapp | webhook | admin."""
+    async with aiosqlite.connect(DB_PATH) as dbx:
+        await dbx.execute(
+            "INSERT INTO events(user_id, kind, amount, meta, source, created_at) VALUES(?,?,?,?,?,?)",
+            (user_id, kind, amount, json.dumps(meta or {}, ensure_ascii=False), source, iso(now())),
+        )
+        await dbx.commit()
+
+
+async def list_events(limit=100, kind=None, user_id=None):
+    async with aiosqlite.connect(DB_PATH) as dbx:
+        dbx.row_factory = aiosqlite.Row
+        q = ("SELECT e.*, u.username, u.full_name, COALESCE(u.balance_rub,0) balance_rub "
+             "FROM events e LEFT JOIN users u ON u.user_id = e.user_id WHERE 1=1")
+        params = []
+        if kind and kind != "all":
+            q += " AND e.kind=?"
+            params.append(kind)
+        if user_id:
+            q += " AND e.user_id=?"
+            params.append(user_id)
+        q += " ORDER BY e.created_at DESC LIMIT ?"
+        params.append(limit)
+        rows = [dict(r) for r in await (await dbx.execute(q, params)).fetchall()]
+        for r in rows:
+            try:
+                r["meta"] = json.loads(r["meta"] or "{}")
+            except Exception:
+                r["meta"] = {}
+        return rows
+
+
+async def events_summary():
+    async with aiosqlite.connect(DB_PATH) as dbx:
+        cur = await dbx.execute("SELECT kind, COUNT(*) c, COALESCE(SUM(amount),0) s FROM events GROUP BY kind")
+        return {row[0]: {"count": row[1], "sum": row[2]} for row in await cur.fetchall()}
 # ============ ПОДПИСКИ СО СЛОТАМИ (многоустройственные тарифы) ============
 
 async def create_subscription(user_id, plan, devices, period) -> int:
