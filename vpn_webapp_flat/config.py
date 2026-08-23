@@ -197,7 +197,7 @@ PLANS = {
     "standard": {
         "title": "Standard",
         "emoji": "🐱",
-        "speed": "100 Мбит/с",
+        "speed": "200 Мбит/с",
         "premium_access": False,
         "features": [
             "Стандартное шифрование",
@@ -225,7 +225,7 @@ PLANS = {
     "premium": {
         "title": "Premium",
         "emoji": "💫",
-        "speed": "200 Мбит/с",
+        "speed": "350 Мбит/с",
         "premium_access": True,
         "features": [
             "Доступ к ⭐️ Premium-серверам",
@@ -253,7 +253,7 @@ PLANS = {
     "ultimate": {
         "title": "Ultimate",
         "emoji": "🌟",
-        "speed": "250 Мбит/с",
+        "speed": "500 Мбит/с",
         "premium_access": True,
         "features": [
             "Доступ к ⭐️ Premium-серверам",
