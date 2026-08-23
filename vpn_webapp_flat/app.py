@@ -30,6 +30,7 @@ import json
 import logging
 import os
 import asyncio
+import texts
 from datetime import timedelta
 from urllib.parse import parse_qsl
 
@@ -390,6 +391,34 @@ async def webhook_lava(request: web.Request):
         log.warning("lava webhook: неизвестный kind=%r из orderId=%r", kind, order_id_raw)
 
     return web.json_response({"ok": True})
+
+@routes.post("/get_config")
+async def api_get_config(request):
+    """Отдаёт содержимое конфига для скачивания/показа QR в мини-аппе
+    (кнопка «Конфиг» в разделе «Подключения»)."""
+    auth = await _auth(request)
+    if not auth:
+        return web.json_response({"error": "bad_init_data"}, status=401)
+    user_id = auth["user_id"]
+    body = request["_body"]
+
+    try:
+        config_id = int(body.get("config_id"))
+    except (TypeError, ValueError):
+        return web.json_response({"error": "bad_config_id"}, status=400)
+
+    cfg = await db.get_config(config_id)
+    if not cfg or cfg.get("user_id") != user_id or cfg.get("status") != "sold":
+        return web.json_response({"error": "not_found"}, status=404)
+
+    ext = "json" if cfg.get("config_type") == "vless" else "conf"
+    filename = f"{texts.region_slug(cfg['region'])}_{cfg['id']}.{ext}"
+
+    return web.json_response({
+        "config_text": cfg["config_text"],
+        "title": f"Конфиг · {cfg['region']}",
+        "filename": filename,
+    })
 
 @routes.post("/check_payment")
 async def api_check_payment(request):
