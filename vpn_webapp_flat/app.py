@@ -44,6 +44,7 @@ import store
 import payments as pay
 import handlers_user
 import admin_api
+import team_api          # ← добавить эту строку
 
 from config import (
     ADMIN_IDS,
@@ -724,7 +725,8 @@ async def on_cleanup(app: web.Application):
 def build_app() -> web.Application:
     app = web.Application()
     app.add_routes(routes)
-    app.add_routes(admin_api.routes)    
+    app.add_routes(admin_api.routes)
+    app.add_routes(team_api.routes)     # ← добавить эту строку
     if os.path.isdir(STATIC_DIR):
         app.router.add_static("/static/", STATIC_DIR, show_index=False)
     app.on_startup.append(on_startup)
