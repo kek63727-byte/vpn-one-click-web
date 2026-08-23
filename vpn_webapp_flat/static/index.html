@@ -1408,6 +1408,8 @@ async function loadUserData() {
     userState.activeConfigs = data.active_configs || [];
     userState.referralCode = data.referral_code || String(data.user_id);
     userState.referralCount = data.ref_invited || 0;
+    userState.freezePrice = data.freeze_price || 0;
+    userState.freezeDays = data.freeze_days || 0;
 
     // Обновляем UI профиля
     document.getElementById('balanceAmount').textContent = userState.balance + ' ₽';
@@ -1472,10 +1474,13 @@ function renderConnections() {
           <div class="conn-name">${cfg.region}</div>
           <div class="conn-meta">до ${exp} · ${cfg.plan || 'standard'}</div>
         </div>
-                <div class="conn-side">
+                               <div class="conn-side">
           <span class="conn-status ${isActive ? 'active' : 'expired'}">${isActive ? 'active' : 'expired'}</span>
           ${isActive ? `<button class="conn-dl-btn" onclick="openConfigModal('${cfgId}', this)">
             <svg class="icon"><use href="#i-download"/></svg>Конфиг
+          </button>
+          <button class="conn-dl-btn" style="color:var(--cyan);border-color:rgba(34,211,238,0.3);background:rgba(34,211,238,0.08);" onclick="requestFreeze('${cfgId}', '${cfg.region}')">
+            ❄️ Заморозить
           </button>
           <button class="conn-dl-btn report-btn" onclick="openReportModal('${cfgId}', '${cfg.region}')">
             <svg class="icon"><use href="#i-bell"/></svg>Проблема
@@ -1483,6 +1488,53 @@ function renderConnections() {
         </div>
       </div>`;
   }).join('');
+}
+
+// ══════════════════════ ЗАМОРОЗКА ПОДПИСКИ ══════════════════════
+function requestFreeze(configId, region) {
+  if (!tg?.initData) { showToast('Открой мини-апп через бот'); return; }
+  const price = userState.freezePrice || 0;
+  const days = userState.freezeDays || 0;
+  const msg = `Заморозить подписку «${region}» на ${days} дн. за ${price} ₽?`;
+  if (tg?.showConfirm) {
+    tg.showConfirm(msg, (confirmed) => { if (confirmed) doFreeze(configId); });
+  } else if (confirm(msg)) {
+    doFreeze(configId);
+  }
+}
+
+async function doFreeze(configId) {
+  try {
+    const resp = await fetch('/freeze_config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config_id: configId, init_data: tg.initData }),
+    });
+    const data = await resp.json();
+
+    if (data.error) {
+      if (data.error === 'need_topup') {
+        const need = Math.max(50, (data.to_pay || 0) - (data.balance || 0));
+        showToast(`💳 Недостаточно баланса. Пополни на ${need} ₽`);
+        showTopupModalWithCustom(need);
+        return;
+      }
+      if (data.error === 'cooldown') {
+        showToast(`⏳ Следующая заморозка доступна с ${data.next_available}`);
+        return;
+      }
+      showToast('❌ Не удалось заморозить');
+      return;
+    }
+
+    userState.balance = data.balance;
+    document.getElementById('balanceAmount').textContent = data.balance + ' ₽';
+    showToast(`✅ Заморожено до ${data.new_expires_at}`);
+    tg?.HapticFeedback?.notificationOccurred('success');
+    await loadUserData();
+  } catch (err) {
+    showToast('❌ ' + err.message);
+  }
 }
 
 // ══════════════════════ КОНФИГ: скачивание прямо в мини-аппе ══════════════════════
