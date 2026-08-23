@@ -17,6 +17,7 @@ from config import (
     RUB_PER_STAR,
     USD_RUB_RATE,
     USDT_RUB_RATE,
+    PUBLIC_BASE_URL,
 )
 
 
@@ -191,7 +192,6 @@ async def _lava_post(url: str, body_dict: dict) -> dict:
     import json
 
     import aiohttp
-    # подписываем РОВНО ту строку, которую отправляем
     raw = json.dumps(body_dict, ensure_ascii=False)
     headers = {
         "Accept": "application/json",
@@ -204,15 +204,7 @@ async def _lava_post(url: str, body_dict: dict) -> dict:
 
 
 async def create_lava_invoice(order_id: int, rub: int, comment: str, kind: str = "order"):
-    """Создаёт счёт в LAVA Business. Возвращает (invoice_id, pay_url).
-
-    kind — namespace для orderId ("order" для покупок тарифов, "topup" для
-    пополнений баланса). order_id и topup_id — независимые autoincrement-
-    счётчики в разных таблицах и могут совпадать по значению (например,
-    order_id=5 и topup_id=5). Lava хранит все orderId у себя и отклоняет
-    повтор ошибкой "OrderId должен быть уникальным", даже если для вас это
-    два разных объекта. Префикс вида "topup-5" / "order-5" исключает коллизии.
-    """
+    """..."""
     lava_order_id = f"{kind}-{order_id}"
     body = {
         "sum": float(rub),
@@ -220,6 +212,7 @@ async def create_lava_invoice(order_id: int, rub: int, comment: str, kind: str =
         "shopId": LAVA_SHOP_ID,
         "comment": comment[:255],
         "expire": 60,
+        "hookUrl": f"{PUBLIC_BASE_URL}/webhook/lava",
     }
     data = await _lava_post(_LAVA_CREATE_URL, body)
     d = data.get("data") or data
@@ -231,8 +224,7 @@ async def create_lava_invoice(order_id: int, rub: int, comment: str, kind: str =
 
 
 async def check_lava_invoice(order_id: int, kind: str = "order") -> bool:
-    """True, если счёт оплачён (по orderId). kind должен совпадать с тем,
-    что передавался в create_lava_invoice для этого же заказа."""
+    """..."""
     lava_order_id = f"{kind}-{order_id}"
     body = {"shopId": LAVA_SHOP_ID, "orderId": lava_order_id}
     data = await _lava_post(_LAVA_STATUS_URL, body)
