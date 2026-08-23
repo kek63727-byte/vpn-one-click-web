@@ -175,11 +175,19 @@ USD_RUB_RATE = float(os.getenv("USD_RUB_RATE", "74"))
 # LAVA Business (business.lava.ru)
 LAVA_SHOP_ID = os.getenv("LAVA_SHOP_ID", "")
 LAVA_SECRET_KEY = os.getenv("LAVA_SECRET_KEY", "")
-
+# Отдельный "дополнительный ключ" из ЛК LAVA — используется ТОЛЬКО для проверки
+# подписи входящих вебхуков, отличается от LAVA_SECRET_KEY (тот подписывает
+# исходящие запросы к LAVA при создании/проверке счетов).
+LAVA_WEBHOOK_SECRET = os.getenv("LAVA_WEBHOOK_SECRET", "")
 # ============ WEB APP (оплата через Mini App / СБП) ============
 # URL задеплоенного Web App (например, Railway: https://<проект>.up.railway.app).
 # Используется в кнопке WebAppInfo для оплаты через СБП прямо в Telegram.
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://your-app.up.railway.app")
+
+# Публичный базовый URL этого сервиса — используется для формирования
+# hookUrl (куда LAVA шлёт вебхуки об оплате). Обычно совпадает с WEBAPP_URL,
+# но задан отдельно на случай, если домены когда-нибудь разъедутся.
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", WEBAPP_URL).rstrip("/")
 
 # ============ ТАРИФЫ И ЦЕНЫ (в рублях) ============
 PLANS = {
