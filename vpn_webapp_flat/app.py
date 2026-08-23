@@ -299,6 +299,10 @@ async def api_create_payment(request):
     # ── Баланса не хватает — сразу просим пополнить, ДО брони сервера.
     # Никакой Lava-ссылки на оплату тарифа больше не создаём.
     if balance < to_pay:
+        await db.log_event(user_id, "order_failed", amount=to_pay,
+                            meta={"reason": "need_topup", "plan": plan, "devices": devices,
+                                  "period": period, "region": region, "balance": balance},
+                            source="webapp")
         return web.json_response({
             "error": "need_topup",
             "to_pay": to_pay,
@@ -308,6 +312,9 @@ async def api_create_payment(request):
     reserved = await db.reserve_purchase(region, devices, user_id)
     if reserved is None:
         # Баланса хватает, но серверов нет — это реальный дефицит стока.
+        await db.log_event(user_id, "order_failed",
+                            meta={"reason": "no_stock", "plan": plan, "devices": devices,
+                                  "period": period, "region": region}, source="webapp")
         return web.json_response({"error": "no_stock"}, status=409)
 
     config_ids = [c["id"] for c in reserved]
@@ -330,7 +337,7 @@ async def api_create_payment(request):
     # Оплата с баланса — сразу выдаём тариф.
     order = await db.get_order(order_id)
     await handlers_user._fulfill(_TargetShim(user_id), user_id, order, bot,
-                                  paid_money=False, lang=lang)
+                                  paid_money=False, lang=lang, source="webapp")
 
     if offer_applied:
         await db.mark_webapp_offer_used(user_id)
@@ -405,6 +412,8 @@ async def webhook_lava(request: web.Request):
         await db.set_topup_paid(entity_id)
         await db.add_balance(topup["user_id"], topup["amount_rub"])
         await db.record_payment(topup["user_id"], 0, topup["amount_rub"], "LAVA", str(entity_id))
+        await db.log_event(topup["user_id"], "topup_paid", amount=topup["amount_rub"],
+                            meta={"method": "LAVA", "topup_id": entity_id}, source="webhook")
         log.info("lava webhook: topup %s credited for user %s", entity_id, topup["user_id"])
         try:
             await bot.send_message(topup["user_id"],
@@ -419,7 +428,7 @@ async def webhook_lava(request: web.Request):
         await db.record_payment(order["user_id"], order["id"], order["rub"], "LAVA", str(entity_id))
         lang = await db.get_lang(order["user_id"])
         await handlers_user._fulfill(_TargetShim(order["user_id"]), order["user_id"], order, bot,
-                                      paid_money=True, lang=lang)
+                                      paid_money=True, lang=lang, source="webhook")
         log.info("lava webhook: order %s fulfilled for user %s", entity_id, order["user_id"])
     else:
         log.warning("lava webhook: неизвестный kind=%r из orderId=%r", kind, order_id_raw)
@@ -567,6 +576,8 @@ async def api_topup(request):
         log.exception("topup invoice error: %s", e)
         return web.json_response({"error": "payment_unavailable"}, status=500)
 
+    await db.log_event(user_id, "topup_invoice", amount=amount,
+                        meta={"method": method, "topup_id": topup_id}, source="webapp")
     return web.json_response({
         "payment_url": pay_url,
         "topup_id": topup_id,
@@ -618,6 +629,8 @@ async def api_check_topup(request):
     await db.set_topup_paid(topup_id)
     await db.add_balance(user_id, topup["amount_rub"])
     await db.record_payment(user_id, 0, topup["amount_rub"], method.upper(), str(topup_id))
+    await db.log_event(user_id, "topup_paid", amount=topup["amount_rub"],
+                        meta={"method": method, "topup_id": topup_id}, source="webapp")
 
     balance = await db.get_balance(user_id)
     return web.json_response({"status": "paid", "balance": balance})
@@ -713,9 +726,6 @@ async def api_admin_stats(request):
 
 @routes.post("/freeze_config")
 async def api_freeze_config(request):
-    """Заморозка подписки — аналог кнопки «⏸ Заморозить» в боте
-    (handlers_user.cb_freeze_do): продлевает конфиг на FREEZE_DAYS
-    за FREEZE_PRICE с внутреннего баланса, с учётом кулдауна."""
     auth = await _auth(request)
     if not auth:
         return web.json_response({"error": "bad_init_data"}, status=401)
@@ -733,6 +743,9 @@ async def api_freeze_config(request):
 
     ok, nxt = await db.can_freeze(config_id, FREEZE_COOLDOWN_DAYS)
     if not ok:
+        await db.log_event(user_id, "freeze_failed",
+                            meta={"reason": "cooldown", "region": cfg["region"], "config_id": config_id},
+                            source="webapp")
         return web.json_response({
             "error": "cooldown",
             "next_available": (nxt or "")[:10],
@@ -740,6 +753,9 @@ async def api_freeze_config(request):
 
     balance = await db.get_balance(user_id)
     if balance < FREEZE_PRICE:
+        await db.log_event(user_id, "freeze_failed", amount=FREEZE_PRICE,
+                            meta={"reason": "need_topup", "region": cfg["region"], "balance": balance},
+                            source="webapp")
         return web.json_response({
             "error": "need_topup",
             "to_pay": FREEZE_PRICE,
@@ -748,6 +764,9 @@ async def api_freeze_config(request):
 
     if not await db.deduct_balance(user_id, FREEZE_PRICE):
         fresh_balance = await db.get_balance(user_id)
+        await db.log_event(user_id, "freeze_failed", amount=FREEZE_PRICE,
+                            meta={"reason": "need_topup_race", "region": cfg["region"]},
+                            source="webapp")
         return web.json_response({
             "error": "need_topup",
             "to_pay": FREEZE_PRICE,
@@ -757,6 +776,9 @@ async def api_freeze_config(request):
     new_exp = await db.extend_config(config_id, FREEZE_DAYS)
     await db.mark_frozen(config_id)
     new_balance = await db.get_balance(user_id)
+    await db.log_event(user_id, "freeze", amount=FREEZE_PRICE,
+                        meta={"region": cfg["region"], "config_id": config_id, "days": FREEZE_DAYS},
+                        source="webapp")
 
     return web.json_response({
         "ok": True,
