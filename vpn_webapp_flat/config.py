@@ -150,10 +150,11 @@ AUTORENEW_BEFORE_DAYS = int(os.getenv("AUTORENEW_BEFORE_DAYS", "1"))
 # stars | yookassa | crypto | lava | choice
 # choice = показать пользователю выбор: Карта / СБП / Крипта
 #
-# ВАЖНО: оплата "по базе" (по умолчанию, если переменная окружения PAYMENT_MODE
-# не задана) теперь идёт через LAVA (СБП / карта). Раньше тут стоял дефолт
-# "stars" — из-за этого платежи по умолчанию уходили в Telegram Stars.
-PAYMENT_MODE = "lava"  # было: os.getenv("PAYMENT_MODE", "lava")
+# По умолчанию (если переменная окружения PAYMENT_MODE не задана в .env) —
+# оплата идёт через LAVA (СБП / карта). Задай PAYMENT_MODE=choice в .env,
+# чтобы дать пользователю выбор способа оплаты, или PAYMENT_MODE=crypto —
+# чтобы принимать только крипту, и т.д.
+PAYMENT_MODE = os.getenv("PAYMENT_MODE", "lava")
 
 # Telegram Stars
 RUB_PER_STAR = float(os.getenv("RUB_PER_STAR", "1.6"))
