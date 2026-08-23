@@ -863,3 +863,145 @@ openAdmin = async function(section) {
   if (section === 'transactions') return adminTransactions();
   return _origOpenAdmin(section);
 };
+
+// ═══════════════════════════════════════════════════════════════
+// ПАТЧ ДЛЯ admin.js — добавь этот блок В САМЫЙ НИЗ файла, ПОСЛЕ
+// существующего блока:
+//   const _origOpenAdmin = openAdmin;
+//   openAdmin = async function(section) { ... };
+// Порядок важен: этот патч должен идти СТРОГО ПОСЛЕ него, иначе
+// раздел 'team' не подключится (см. пояснение в конце этого файла).
+// Использует уже существующие _adminFetch / _showAdmin / _skeleton /
+// adm-* стили — ничего больше подключать не нужно.
+// ═══════════════════════════════════════════════════════════════
+
+const _TEAM_ROLE_ICON = {
+  qa: 'i-shield', idea: 'i-zap', hr: 'i-users', dev: 'i-server',
+  design: 'i-star', marketing: 'i-bell', other: 'i-gift',
+};
+const _TEAM_STATUS = {
+  new:       { l: '🆕 новая',      c: 'gray'   },
+  contacted: { l: '💬 связались',  c: 'cyan'   },
+  hired:     { l: '✅ нанят',      c: 'green'  },
+  rejected:  { l: '❌ отклонена',  c: 'red'    },
+};
+
+let _teamStatusFilter = 'all';
+
+async function adminTeam() {
+  _showAdmin('team', '🧑\u200d💼 Заявки в команду', 'Загрузка…', _skeleton(4));
+  const d = await _adminFetch('/admin/team_applications', { status: _teamStatusFilter });
+  if (!d) return;
+  _renderTeamList(d);
+}
+
+function _renderTeamList(d) {
+  const counts = d.counts || {};
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+
+  const filters = ['all', 'new', 'contacted', 'hired', 'rejected'].map(k => {
+    const label = { all: 'Все', new: 'Новые', contacted: 'В работе', hired: 'Наняты', rejected: 'Откл.' }[k];
+    const n = k === 'all' ? total : (counts[k] || 0);
+    return `<div class="adm-btn ${_teamStatusFilter === k ? 'primary' : 'ghost'}"
+      style="flex:1;padding:9px 4px;font-size:11px;" onclick="_teamStatusFilter='${k}';adminTeam();">${label}${n ? ` (${n})` : ''}</div>`;
+  }).join('');
+
+  const list = !d.applications.length
+    ? `<div class="adm-empty"><svg><use href="#i-users"/></svg>Заявок пока нет</div>`
+    : d.applications.map(a => {
+        const st = _TEAM_STATUS[a.status] || _TEAM_STATUS.new;
+        const dt = (a.created_at || '').slice(0, 16).replace('T', ' ');
+        const salary = (a.salary_from || a.salary_to)
+          ? `${a.salary_from || '—'}–${a.salary_to || '—'} ${a.currency || ''}` : null;
+        return `
+        <div class="adm-list-item" onclick="adminTeamCard(${a.id})">
+          <div class="adm-avatar">${_initials(a.full_name || a.username || String(a.user_id))}</div>
+          <div class="adm-list-info">
+            <div class="adm-list-name">${a.full_name || '—'} ${a.username ? '· @' + a.username : ''}</div>
+            <div class="adm-list-meta">${a.role_title} · ${a.experience_title}${salary ? ' · ' + salary : ''}</div>
+            <div class="adm-list-meta" style="color:var(--dim);">${dt} · ${a.contact_tg}</div>
+          </div>
+          <div class="adm-list-side">
+            <span class="adm-badge ${st.c}">${st.l}</span>
+            <div class="adm-chev"><svg class="icon"><use href="#i-chevron"/></svg></div>
+          </div>
+        </div>`;
+      }).join('');
+
+  const html = `<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;">${filters}</div>${list}`;
+  _showAdmin('team', '🧑\u200d💼 Заявки в команду', `Всего: ${total}`, html);
+}
+
+async function adminTeamCard(id) {
+  _showAdmin('team', '🧑\u200d💼 Анкета', 'Загрузка…', _skeleton(3));
+  const d = await _adminFetch('/admin/team_applications/card', { id });
+  if (!d) return;
+  const a = d.application;
+  const st = _TEAM_STATUS[a.status] || _TEAM_STATUS.new;
+  const salary = (a.salary_from || a.salary_to)
+    ? `${a.salary_from || '—'}–${a.salary_to || '—'} ${a.currency || ''} · ${a.payment_type === 'percent' ? 'процент от прибыли' : 'фиксированная'}`
+    : 'не указана';
+
+  const html = `
+    <div class="adm-wide-card">
+      <div class="adm-wide-row">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div class="adm-avatar" style="width:44px;height:44px;font-size:16px;">${_initials(a.full_name || a.username || String(a.user_id))}</div>
+          <div>
+            <div class="adm-wide-title">${a.full_name || '—'} ${a.username ? '· @' + a.username : ''}</div>
+            <div class="adm-wide-sub">ID <code>${a.user_id}</code></div>
+          </div>
+        </div>
+        <span class="adm-badge ${st.c}">${st.l}</span>
+      </div>
+    </div>
+
+    <div class="adm-wide-card">
+      <div class="adm-wide-row"><div class="adm-wide-icon" style="background:rgba(124,58,237,.14);color:var(--accent2);"><svg class="icon"><use href="#${_TEAM_ROLE_ICON[a.role] || 'i-users'}"/></svg></div>
+        <div style="flex:1;"><div class="adm-wide-title">${a.role_title}</div><div class="adm-wide-sub">Опыт: ${a.experience_title}</div></div>
+      </div>
+    </div>
+    <div class="adm-wide-card"><div class="adm-wide-sub" style="margin-bottom:2px;">Ожидаемая оплата</div><div class="adm-wide-title" style="font-size:13px;">${salary}</div></div>
+    <div class="adm-wide-card"><div class="adm-wide-sub" style="margin-bottom:2px;">Связь</div><div class="adm-wide-title" style="font-size:13px;">${a.contact_tg}</div></div>
+    ${a.comment ? `<div class="adm-wide-card"><div class="adm-wide-sub" style="margin-bottom:4px;">Комментарий</div><div style="font-size:12.5px;color:var(--dim);line-height:1.5;">${a.comment}</div></div>` : ''}
+    ${a.resume_filename ? `
+      <div class="adm-btn ghost full" style="margin-bottom:10px;" onclick="_teamDownloadResume('${a.resume_filename}','${a.resume_mime || ''}', ${a.id})">
+        <svg class="icon"><use href="#i-download"/></svg>&nbsp;Скачать: ${a.resume_filename}
+      </div>` : ''}
+
+    <div class="adm-section-title">Статус</div>
+    <div class="adm-btn-grid">
+      <div class="adm-btn ${a.status==='contacted'?'primary':''}" onclick="_teamSetStatus(${a.id},'contacted')">💬 Связались</div>
+      <div class="adm-btn ok ${a.status==='hired'?'primary':''}" onclick="_teamSetStatus(${a.id},'hired')">✅ Нанять</div>
+      <div class="adm-btn danger full" onclick="_teamSetStatus(${a.id},'rejected')">❌ Отклонить</div>
+    </div>
+    <div class="adm-divider"></div>
+    <div class="adm-btn ghost full" onclick="adminTeam()">⬅️ К списку заявок</div>`;
+  _showAdmin('team', '🧑\u200d💼 Анкета', `#${a.id}`, html);
+}
+
+async function _teamSetStatus(id, status) {
+  const d = await _adminFetch('/admin/team_applications/status', { id, status });
+  if (!d) return;
+  showToast('✅ Статус обновлён');
+  tg?.HapticFeedback?.notificationOccurred('success');
+  adminTeamCard(id);
+}
+
+// резюме хранится в base64 только в карточке (не в списке) — качаем через data URL
+async function _teamDownloadResume(filename, mime, id) {
+  const d = await _adminFetch('/admin/team_applications/card', { id });
+  if (!d || !d.application?.resume_b64) { showToast('❌ Файл недоступен'); return; }
+  const a = document.createElement('a');
+  a.href = `data:${mime || 'application/octet-stream'};base64,${d.application.resume_b64}`;
+  a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+// ── регистрация в роутере (добавь 'team: adminTeam,' в map внутри openAdmin
+//    ИЛИ просто оставь этот перехват — он работает независимо от map) ──
+const _origOpenAdminTeam = openAdmin;
+openAdmin = async function(section) {
+  if (section === 'team') return adminTeam();
+  return _origOpenAdminTeam(section);
+};
