@@ -300,13 +300,18 @@ def referral_kb(lang="ru"):
 
 
 def howto_kb(lang="ru"):
+    from config import CONNECT_VIDEO_FILE_ID
     kb = InlineKeyboardBuilder()
     kb.button(text="💻 Windows", callback_data="guide:windows")
     kb.button(text="💻 macOS", callback_data="guide:macos")
     kb.button(text="📱 Android", callback_data="guide:android")
     kb.button(text="🍏 iPhone", callback_data="guide:iphone")
+    if CONNECT_VIDEO_FILE_ID:
+        kb.button(text=_t(lang, "📹 Видео-инструкция", "📹 Video guide"), callback_data="guide:video")
+        kb.adjust(2, 2, 1, 1)
+    else:
+        kb.adjust(2, 2, 1)
     kb.button(text=_t(lang, "⬅️ В главное меню", "⬅️ Main menu"), callback_data="menu")
-    kb.adjust(2, 2, 1)
     return kb.as_markup()
 
 
