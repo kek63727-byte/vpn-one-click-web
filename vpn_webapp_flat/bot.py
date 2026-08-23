@@ -272,6 +272,9 @@ async def main() -> None:
         "message can't be deleted",
         "message to delete not found",
         "MESSAGE_ID_INVALID",
+        "bot was blocked by the user",
+        "user is deactivated",
+        "chat not found",
     )
 
     @dp.errors()
