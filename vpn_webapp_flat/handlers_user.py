@@ -2210,6 +2210,13 @@ async def _send_vless_config(target: Message, cfg: dict, expires, idx, total, la
         filename = f"{texts.region_slug(region)}_{cfg['id']}.json"
         await target.answer_document(BufferedInputFile(text.encode(), filename=filename),
                                      caption=_vless_copy_hint(lang))
+    # Видео-инструкция по подключению
+    from config import CONNECT_VIDEO_FILE_ID
+    if CONNECT_VIDEO_FILE_ID:
+        caption_vid = _tt(lang,
+            "📹 Видео-инструкция по подключению через happ",
+            "📹 Video guide: how to connect via happ")
+        await target.answer_video(CONNECT_VIDEO_FILE_ID, caption=caption_vid)
 
                                      
 
@@ -2524,10 +2531,3 @@ async def _do_replace(call: CallbackQuery, bot: Bot, config_id: int, region: str
                 f"<i>Замени испорченный конфиг на аккаунте «{src}» в WireCat.</i>")
         except Exception:
             pass
-
-
-@router.message(F.video)
-async def get_video_file_id(message: Message):
-    if message.from_user.id not in ADMIN_IDS:
-        return
-    await message.answer(f"<code>{message.video.file_id}</code>")
