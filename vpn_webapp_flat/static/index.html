@@ -553,6 +553,41 @@
   .recruit-file-btn { margin-top: 12px; display: flex; align-items: center; gap: 9px; padding: 12px 14px; border-radius: 12px; background: var(--surface); border: 1.5px dashed var(--border); color: var(--dim); font-size: 12.5px; font-weight: 600; cursor: pointer; }
   .recruit-file-btn.has-file { border-style: solid; border-color: var(--accent); color: var(--text); }
   .recruit-file-hint { font-size: 10.5px; color: var(--muted); margin: 5px 2px 0; }
+    .recruit-banner {
+    display: flex; align-items: center; gap: 10px;
+    background: linear-gradient(90deg, rgba(34,197,94,0.06), rgba(124,58,237,0.06));
+    border: 1px solid rgba(34,197,94,0.18);
+    border-radius: 12px; padding: 10px 12px 10px 14px;
+    margin: 0 16px 12px;
+    animation: recruitBannerIn 0.35s cubic-bezier(0.34,1.56,0.64,1) both;
+    position: relative; overflow: hidden;
+  }
+  @keyframes recruitBannerIn {
+    from { opacity: 0; transform: translateY(-8px); max-height: 0; }
+    to   { opacity: 1; transform: translateY(0);    max-height: 60px; }
+  }
+  .recruit-banner-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #22c55e; box-shadow: 0 0 7px #22c55e;
+    animation: pulse 2s ease-in-out infinite; flex-shrink: 0;
+  }
+  .recruit-banner-text { flex: 1; font-size: 12.5px; color: #a89fc4; line-height: 1.4; }
+  .recruit-banner-text b { color: #f6f4ff; font-weight: 700; }
+  .recruit-banner-btn {
+    font-size: 11px; font-weight: 700; font-family: var(--mono);
+    color: #b794ff; background: rgba(124,58,237,0.15);
+    border: 1px solid rgba(168,85,247,0.3);
+    padding: 6px 12px; border-radius: 8px; cursor: pointer;
+    white-space: nowrap; flex-shrink: 0; transition: background 0.15s;
+  }
+  .recruit-banner-btn:active { transform: scale(0.95); }
+  .recruit-banner-close {
+    position: absolute; top: 6px; right: 8px;
+    font-size: 14px; color: #6f6884; cursor: pointer;
+    background: none; border: none; line-height: 1; padding: 2px 4px;
+  }
+  .recruit-banner-close:hover { color: #a89fc4; }
+</style>
 </style>
 
 </head>
@@ -1232,6 +1267,47 @@ let userState = {
 let specialOfferActive = false;
 let specialOfferPercent = 0;
 
+function maybeShowRecruitBanner() {
+  const KEY = 'recruit_banner_shown_v1';
+  const COOLDOWN = 60 * 60 * 1000;
+  let last = 0;
+  try { last = parseInt(localStorage.getItem(KEY) || '0', 10); } catch(e) {}
+  if (Date.now() - last < COOLDOWN) return;
+  if (document.getElementById('recruitBanner')) return;
+
+  const banner = document.createElement('div');
+  banner.className = 'recruit-banner';
+  banner.id = 'recruitBanner';
+  banner.innerHTML = `
+    <button class="recruit-banner-close" onclick="closeRecruitBanner()">✕</button>
+    <div class="recruit-banner-dot"></div>
+    <div class="recruit-banner-text">
+      <b>Ищем людей в команду</b> — хочешь зарабатывать с нами?
+    </div>
+    <div class="recruit-banner-btn" onclick="recruitBannerClick()">Подать заявку</div>
+  `;
+
+  const profileScreen = document.getElementById('screen-profile');
+  const firstContainer = profileScreen.querySelector('.container');
+  if (firstContainer) profileScreen.insertBefore(banner, firstContainer);
+
+  try { localStorage.setItem(KEY, String(Date.now())); } catch(e) {}
+}
+
+function closeRecruitBanner() {
+  const b = document.getElementById('recruitBanner');
+  if (!b) return;
+  b.style.transition = 'opacity 0.2s, transform 0.2s';
+  b.style.opacity = '0';
+  b.style.transform = 'translateY(-8px)';
+  setTimeout(() => b.remove(), 220);
+}
+
+function recruitBannerClick() {
+  closeRecruitBanner();
+  showRecruitModal();
+}
+
 function maybeShowOfferModal(offer) {
   if (!offer || !offer.eligible || !offer.percent) return;
   specialOfferPercent = offer.percent;
@@ -1314,8 +1390,9 @@ async function loadUserData() {
         // Рендерим подключения
     renderConnections();
 
-    // Попап со скидкой — только если сервер подтвердил право на неё
+        // Попап со скидкой — только если сервер подтвердил право на неё
     maybeShowOfferModal(data.special_offer);
+    maybeShowRecruitBanner();   // ← ДОБАВИТЬ ЭТУ СТРОКУ
   } catch (e) {
     console.error('loadUserData error:', e);
   }
