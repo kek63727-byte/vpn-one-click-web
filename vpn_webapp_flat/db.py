@@ -179,7 +179,7 @@ async def init_db():
             ("plan", "plan TEXT"), ("period", "period TEXT"),
         ]:
             await _ensure_column(db, "configs", col, ddl)
-        for col, ddl in [
+          for col, ddl in [
             ("referred_by", "referred_by INTEGER"),
             ("trial_used", "trial_used INTEGER NOT NULL DEFAULT 0"),
             ("bonus_days", "bonus_days INTEGER NOT NULL DEFAULT 0"),
@@ -197,6 +197,7 @@ async def init_db():
             ("verified", "verified INTEGER NOT NULL DEFAULT 0"),
             ("channel_bonus_claimed", "channel_bonus_claimed INTEGER NOT NULL DEFAULT 0"),
             ("trial_reminded", "trial_reminded INTEGER NOT NULL DEFAULT 0"),
+            ("webapp_offer_used", "webapp_offer_used INTEGER NOT NULL DEFAULT 0"),
         ]:
             await _ensure_column(db, "users", col, ddl)
         for col, ddl in [
@@ -1528,7 +1529,44 @@ async def total_spent(user_id) -> int:
         )
         return (await cur.fetchone())[0] or 0
 
+# ---------- мини-апп: приветственная / возвратная скидка ----------
 
+async def has_active_subscription(user_id) -> bool:
+    """Есть ли у пользователя сейчас активный платный конфиг или слот-подписка."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "SELECT 1 FROM configs WHERE user_id=? AND status='sold' AND is_trial=0 LIMIT 1",
+            (user_id,),
+        )
+        if await cur.fetchone():
+            return True
+        cur = await db.execute(
+            "SELECT 1 FROM subscriptions WHERE user_id=? AND status='active' LIMIT 1",
+            (user_id,),
+        )
+        return await cur.fetchone() is not None
+
+
+async def has_used_webapp_offer(user_id) -> bool:
+    u = await get_user(user_id)
+    return bool(u and u.get("webapp_offer_used"))
+
+
+async def mark_webapp_offer_used(user_id):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("UPDATE users SET webapp_offer_used=1 WHERE user_id=?", (user_id,))
+        await db.commit()
+
+
+async def webapp_offer_eligible(user_id) -> bool:
+    """Право на попап-скидку в мини-аппе: новый (ничего не покупал) ИЛИ
+    покупал раньше, но сейчас нет активной подписки — и оффер ещё не использован."""
+    if await has_used_webapp_offer(user_id):
+        return False
+    spent = await total_spent(user_id)
+    if spent == 0:
+        return True
+    return not await has_active_subscription(user_id)
 # ---------- промокоды: учёт по пользователю ----------
 
 async def promo_redeemed_by(code, user_id) -> bool:
