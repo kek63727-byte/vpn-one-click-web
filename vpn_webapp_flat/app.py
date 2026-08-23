@@ -170,7 +170,10 @@ async def api_prices(request):
         period: store.get_price(PRIME_PLAN, PRIME_DEVICES, period)
         for period in PRIME_PRICES
     }
-    return web.json_response({"plans": plans_out, "prime_prices": prime_prices})
+    resp = web.json_response({"plans": plans_out, "prime_prices": prime_prices})
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
 
 @routes.post("/me")
 async def api_me(request):
