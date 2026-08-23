@@ -721,7 +721,7 @@ async def cb_freeze_do(call: CallbackQuery):
         await call.answer(_tt(lang, "Подписка не найдена.", "Subscription not found."), show_alert=True)
         return
     # лимит: не чаще одной заморозки в FREEZE_COOLDOWN_DAYS дней
-        ok, nxt = await db.can_freeze(cid, FREEZE_COOLDOWN_DAYS)
+    ok, nxt = await db.can_freeze(cid, FREEZE_COOLDOWN_DAYS)
     if not ok:
         until = (nxt or "")[:10]
         await db.log_event(call.from_user.id, "freeze_failed",
@@ -1213,7 +1213,7 @@ async def _credit_topup(target, bot, user_id, topup_id, method_name, ref, lang, 
     if bonus > 0:
         await db.add_balance(user_id, bonus)
     await db.record_payment(user_id, 0, topup["amount_rub"], method_name, str(ref))
-        await db.log_event(user_id, "topup_paid", amount=topup["amount_rub"],
+    await db.log_event(user_id, "topup_paid", amount=topup["amount_rub"],
                         meta={"method": method_name, "topup_id": topup_id}, source="bot")
     rate = await _rate(lang)
     bal = await db.get_balance(user_id)
