@@ -1321,7 +1321,12 @@ function maybeShowRecruitBanner() {
       Подать заявку
     </div>
     <button onclick="closeRecruitBanner()"
-      style="background:none;border:none;
+      style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:4px 6px;line-height:1;">✕</button>
+  `;
+  document.body.appendChild(banner);
+
+  try { localStorage.setItem(KEY, String(Date.now())); } catch(e) {}
+}
 
 function closeRecruitBanner() {
   const b = document.getElementById('recruitBanner');
