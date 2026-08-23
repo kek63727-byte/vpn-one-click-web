@@ -56,6 +56,9 @@ from config import (
     PRIME_DEVICES,
     PRIME_PRICES,
     LAVA_WEBHOOK_SECRET,
+    FREEZE_PRICE,
+    FREEZE_DAYS,
+    FREEZE_COOLDOWN_DAYS,
 )
 
 logging.basicConfig(
@@ -222,6 +225,8 @@ async def api_me(request):
         "ref_cash": ref_cash,
         "referral_code": str(user_id),
         "special_offer": {"eligible": offer_eligible, "percent": 50},
+        "freeze_price": FREEZE_PRICE,
+        "freeze_days": FREEZE_DAYS,
     })
 
 
@@ -706,7 +711,59 @@ async def api_admin_stats(request):
         "stock_alert": bool(low_stock),
     })
 
+@routes.post("/freeze_config")
+async def api_freeze_config(request):
+    """Заморозка подписки — аналог кнопки «⏸ Заморозить» в боте
+    (handlers_user.cb_freeze_do): продлевает конфиг на FREEZE_DAYS
+    за FREEZE_PRICE с внутреннего баланса, с учётом кулдауна."""
+    auth = await _auth(request)
+    if not auth:
+        return web.json_response({"error": "bad_init_data"}, status=401)
+    user_id = auth["user_id"]
+    body = request["_body"]
 
+    try:
+        config_id = int(body.get("config_id"))
+    except (TypeError, ValueError):
+        return web.json_response({"error": "bad_config_id"}, status=400)
+
+    cfg = await db.get_config(config_id)
+    if not cfg or cfg.get("user_id") != user_id or cfg.get("status") != "sold":
+        return web.json_response({"error": "not_found"}, status=404)
+
+    ok, nxt = await db.can_freeze(config_id, FREEZE_COOLDOWN_DAYS)
+    if not ok:
+        return web.json_response({
+            "error": "cooldown",
+            "next_available": (nxt or "")[:10],
+        }, status=409)
+
+    balance = await db.get_balance(user_id)
+    if balance < FREEZE_PRICE:
+        return web.json_response({
+            "error": "need_topup",
+            "to_pay": FREEZE_PRICE,
+            "balance": balance,
+        }, status=409)
+
+    if not await db.deduct_balance(user_id, FREEZE_PRICE):
+        fresh_balance = await db.get_balance(user_id)
+        return web.json_response({
+            "error": "need_topup",
+            "to_pay": FREEZE_PRICE,
+            "balance": fresh_balance,
+        }, status=409)
+
+    new_exp = await db.extend_config(config_id, FREEZE_DAYS)
+    await db.mark_frozen(config_id)
+    new_balance = await db.get_balance(user_id)
+
+    return web.json_response({
+        "ok": True,
+        "config_id": config_id,
+        "new_expires_at": new_exp.strftime("%Y-%m-%d"),
+        "balance": new_balance,
+    })
 # ─────────────────────────────── запуск ───────────────────────────────
 
 async def on_startup(app: web.Application):
