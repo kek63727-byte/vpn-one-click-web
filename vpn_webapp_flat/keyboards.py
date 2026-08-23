@@ -1,5 +1,6 @@
 """Флаги и инлайн-клавиатуры (RU/EN)."""
 
+from aiogram.types import WebAppInfo
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
 from config import (
