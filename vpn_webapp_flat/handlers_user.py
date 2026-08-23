@@ -2524,3 +2524,9 @@ async def _do_replace(call: CallbackQuery, bot: Bot, config_id: int, region: str
                 f"<i>Замени испорченный конфиг на аккаунте «{src}» в WireCat.</i>")
         except Exception:
             pass
+
+            @router.message(F.video)
+async def get_video_file_id(message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    await message.answer(f"<code>{message.video.file_id}</code>")
