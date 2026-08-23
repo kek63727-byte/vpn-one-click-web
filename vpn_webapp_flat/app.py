@@ -53,6 +53,7 @@ from config import (
     PRIME_PLAN,
     PRIME_DEVICES,
     PRIME_PRICES,
+    LAVA_WEBHOOK_SECRET,
 )
 
 logging.basicConfig(
@@ -302,6 +303,93 @@ async def api_create_payment(request):
     new_balance = await db.get_balance(user_id)
     return web.json_response({"paid": True, "order_id": order_id, "balance": new_balance})
 
+@routes.post("/webhook/lava")
+async def webhook_lava(request: web.Request):
+    """Вебхук от LAVA Business. Названия полей в разных версиях API могут
+    отличаться, поэтому пробуем несколько распространённых вариантов и
+    логируем сырой payload — если что-то не распозналось, будет видно в
+    логах Railway (Deployments -> Logs) и легко поправить руками."""
+    raw = await request.text()
+    try:
+        body = json.loads(raw)
+    except Exception as e:
+        log.warning("lava webhook: bad json body: %s raw=%s", e, raw[:500])
+        return web.json_response({"error": "bad_body"}, status=400)
+
+    log.info("lava webhook received: headers=%s body=%s",
+              {k: v for k, v in request.headers.items() if k.lower() != "cookie"}, raw[:2000])
+
+    signature = (
+        request.headers.get("Signature")
+        or request.headers.get("signature")
+        or request.headers.get("Authorization", "").replace("Bearer ", "")
+        or body.get("signature")
+        or ""
+    )
+    if LAVA_WEBHOOK_SECRET:
+        expected = hmac.new(LAVA_WEBHOOK_SECRET.encode(), raw.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected, signature):
+            log.warning("lava webhook: signature mismatch (got=%s expected=%s) — "
+                        "ПРОВЕРЬТЕ LAVA_WEBHOOK_SECRET в .env, это ОТДЕЛЬНЫЙ "
+                        "'дополнительный ключ' из ЛК LAVA, не тот же что LAVA_SECRET_KEY",
+                        signature[:16], expected[:16])
+            return web.json_response({"error": "bad_signature"}, status=403)
+    else:
+        log.warning("lava webhook: LAVA_WEBHOOK_SECRET не задан в .env — "
+                    "подпись НЕ проверяется, это небезопасно для продакшена")
+
+    order_id_raw = (
+        body.get("orderId") or body.get("order_id")
+        or body.get("customFields") or body.get("custom_fields")
+    ) or ""
+    if not order_id_raw and isinstance(body.get("data"), dict):
+        order_id_raw = body["data"].get("orderId") or body["data"].get("order_id") or ""
+
+    status_raw = (
+        body.get("status") or (body.get("data") or {}).get("status") or ""
+    )
+    status = str(status_raw).lower()
+
+    log.info("lava webhook parsed: order_id_raw=%r status=%r", order_id_raw, status)
+
+    if status not in ("success", "paid", "completed", "confirmed"):
+        return web.json_response({"ok": True})
+
+    kind, _, raw_id = str(order_id_raw).partition("-")
+    try:
+        entity_id = int(raw_id)
+    except ValueError:
+        log.warning("lava webhook: не смог распарсить orderId=%r — проверьте формат в логах выше",
+                    order_id_raw)
+        return web.json_response({"error": "bad_order_id"}, status=400)
+
+    if kind == "topup":
+        topup = await db.get_topup(entity_id)
+        if not topup or topup["status"] == "paid":
+            return web.json_response({"ok": True})
+        await db.set_topup_paid(entity_id)
+        await db.add_balance(topup["user_id"], topup["amount_rub"])
+        await db.record_payment(topup["user_id"], 0, topup["amount_rub"], "LAVA", str(entity_id))
+        log.info("lava webhook: topup %s credited for user %s", entity_id, topup["user_id"])
+        try:
+            await bot.send_message(topup["user_id"],
+                                   f"✅ Баланс пополнен на {topup['amount_rub']} ₽")
+        except Exception:
+            pass
+
+    elif kind == "order":
+        order = await db.get_order(entity_id)
+        if not order or order["status"] == "paid":
+            return web.json_response({"ok": True})
+        await db.record_payment(order["user_id"], order["id"], order["rub"], "LAVA", str(entity_id))
+        lang = await db.get_lang(order["user_id"])
+        await handlers_user._fulfill(_TargetShim(order["user_id"]), order["user_id"], order, bot,
+                                      paid_money=True, lang=lang)
+        log.info("lava webhook: order %s fulfilled for user %s", entity_id, order["user_id"])
+    else:
+        log.warning("lava webhook: неизвестный kind=%r из orderId=%r", kind, order_id_raw)
+
+    return web.json_response({"ok": True})
 
 @routes.post("/check_payment")
 async def api_check_payment(request):
