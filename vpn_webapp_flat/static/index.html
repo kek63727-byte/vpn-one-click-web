@@ -309,9 +309,18 @@
   .ic-pink   { background: rgba(236,72,153,0.15); color: var(--pink); }
   .ic-red    { background: rgba(239,68,68,0.15);  color: var(--red); }
 
-  /* CONNECTIONS */
-  .conn-list { padding: 0 16px; display: flex; flex-direction: column; gap: 10px; margin-bottom: 24px; }
-  .conn-item { display: flex; align-items: center; gap: 12px; }
+   /* CONNECTIONS */
+  .conn-list { padding: 0 16px; display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; }
+  .conn-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+    padding: 14px; overflow: hidden; position: relative;
+  }
+  .conn-card::before {
+    content: ''; position: absolute; right: -24px; top: -24px; width: 90px; height: 90px;
+    border-radius: 50%; background: radial-gradient(circle, rgba(124,58,237,0.10), transparent 70%);
+    pointer-events: none;
+  }
+  .conn-card-top { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; position: relative; }
   .conn-icon { width: 40px; height: 40px; border-radius: 11px; flex-shrink: 0; background: rgba(34,197,94,0.12); color: var(--green); display: flex; align-items: center; justify-content: center; }
   .conn-icon.off { background: rgba(148,163,184,0.1); color: var(--muted); }
   .conn-info { min-width: 0; flex: 1; }
@@ -320,13 +329,23 @@
   .conn-status { font-size: 10px; font-weight: 700; font-family: var(--mono); padding: 3px 9px; border-radius: 100px; text-transform: uppercase; letter-spacing: 0.4px; flex-shrink: 0; }
   .conn-status.active { background: rgba(34,197,94,0.12); color: var(--green); border: 1px solid rgba(34,197,94,0.25); }
   .conn-status.expired { background: rgba(239,68,68,0.1); color: var(--red); border: 1px solid rgba(239,68,68,0.22); }
-  .conn-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
-  .conn-dl-btn { display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; font-family: var(--mono); color: var(--accent2); background: rgba(124,58,237,0.14); border: 1px solid rgba(168,85,247,0.3); padding: 5px 10px; border-radius: 100px; cursor: pointer; white-space: nowrap; }
-  .conn-dl-btn:active { transform: scale(0.94); }
-  .conn-dl-btn svg { width: 12px; height: 12px; }
-  .conn-dl-btn.loading { opacity: 0.6; pointer-events: none; }
-    .conn-dl-btn.report-btn { color: var(--orange); border-color: rgba(245,158,11,0.3); background: rgba(245,158,11,0.08); }
 
+  .conn-actions { display: flex; gap: 6px; position: relative; }
+  .conn-action-btn {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 4px; padding: 10px 4px; border-radius: 12px; cursor: pointer; text-align: center;
+    background: var(--surface); border: 1px solid var(--border); transition: transform .1s, border-color .15s;
+  }
+  .conn-action-btn:active { transform: scale(0.95); }
+  .conn-action-btn svg { width: 16px; height: 16px; }
+  .conn-action-btn span { font-size: 10px; font-weight: 700; letter-spacing: 0.2px; }
+  .conn-action-btn.act-dl { color: var(--accent2); }
+  .conn-action-btn.act-dl:active { border-color: rgba(168,85,247,0.4); }
+  .conn-action-btn.act-freeze { color: var(--cyan); }
+  .conn-action-btn.act-freeze:active { border-color: rgba(34,211,238,0.4); }
+  .conn-action-btn.act-report { color: var(--orange); }
+  .conn-action-btn.act-report:active { border-color: rgba(245,158,11,0.4); }
+  .conn-action-btn.loading { opacity: 0.5; pointer-events: none; }
   /* CONFIG MODAL */
   .config-modal-sheet { max-height: 82vh; overflow-y: auto; }
   .report-modal-sheet { max-height: 82vh; overflow-y: auto; }
@@ -1466,26 +1485,34 @@ function renderConnections() {
     const exp = cfg.expires_at || '—';
     const cfgId = cfg.id ?? cfg.config_id ?? i;
     return `
-      <div class="conn-item">
-        <div class="conn-icon ${isActive ? '' : 'off'}">
-          <svg class="icon" style="width:20px;height:20px;"><use href="#i-globe"/></svg>
-        </div>
-        <div class="conn-info">
-          <div class="conn-name">${cfg.region}</div>
-          <div class="conn-meta">до ${exp} · ${cfg.plan || 'standard'}</div>
-        </div>
-                               <div class="conn-side">
+      <div class="conn-card">
+        <div class="conn-card-top">
+          <div class="conn-icon ${isActive ? '' : 'off'}">
+            <svg class="icon" style="width:20px;height:20px;"><use href="#i-globe"/></svg>
+          </div>
+          <div class="conn-info">
+            <div class="conn-name">${cfg.region}</div>
+            <div class="conn-meta">до ${exp} · ${cfg.plan || 'standard'}</div>
+          </div>
           <span class="conn-status ${isActive ? 'active' : 'expired'}">${isActive ? 'active' : 'expired'}</span>
-          ${isActive ? `<button class="conn-dl-btn" onclick="openConfigModal('${cfgId}', this)">
-            <svg class="icon"><use href="#i-download"/></svg>Конфиг
-          </button>
-          <button class="conn-dl-btn" style="color:var(--cyan);border-color:rgba(34,211,238,0.3);background:rgba(34,211,238,0.08);" onclick="requestFreeze('${cfgId}', '${cfg.region}')">
-            ❄️ Заморозить
-          </button>
-          <button class="conn-dl-btn report-btn" onclick="openReportModal('${cfgId}', '${cfg.region}')">
-            <svg class="icon"><use href="#i-bell"/></svg>Проблема
-          </button>` : ''}
         </div>
+        ${isActive ? `
+        <div class="conn-actions">
+          <button class="conn-action-btn act-dl" onclick="openConfigModal('${cfgId}', this)">
+            <svg class="icon"><use href="#i-download"/></svg>
+            <span>Конфиг</span>
+          </button>
+          <button class="conn-action-btn act-freeze" onclick="requestFreeze('${cfgId}', '${cfg.region}')">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2v20M4.5 7l15 10M19.5 7l-15 10M2 12h20"/>
+            </svg>
+            <span>Заморозить</span>
+          </button>
+          <button class="conn-action-btn act-report" onclick="openReportModal('${cfgId}', '${cfg.region}')">
+            <svg class="icon"><use href="#i-bell"/></svg>
+            <span>Проблема</span>
+          </button>
+        </div>` : ''}
       </div>`;
   }).join('');
 }
