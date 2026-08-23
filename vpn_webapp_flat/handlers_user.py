@@ -2237,6 +2237,28 @@ async def _send_config(target: Message, cfg: dict, expires, idx: int, total: int
     except Exception:
         pass
         
+async def send_config_to(bot: Bot, user_id: int, cfg: dict, lang: str = "ru"):
+    """Публичная обёртка для handlers_admin.py: отправляет конфиг конкретному
+    user_id напрямую через Bot API (используется при одобрении смены региона,
+    авто- и ручной замене конфига по жалобе из мини-аппа)."""
+
+    class _DirectTarget:
+        async def answer(self, *a, **kw):
+            return await bot.send_message(user_id, *a, **kw)
+
+        async def answer_document(self, document, caption=None, **kw):
+            return await bot.send_document(user_id, document, caption=caption, **kw)
+
+        async def answer_photo(self, photo, caption=None, **kw):
+            return await bot.send_photo(user_id, photo, caption=caption, **kw)
+
+    target = _DirectTarget()
+    try:
+        exp = datetime.fromisoformat((cfg.get("expires_at") or "").replace("Z", ""))
+    except (ValueError, TypeError):
+        exp = datetime.utcnow()
+    await _send_config(target, cfg, exp, 1, 1, lang)
+
 # ============ МОИ ПОДКЛЮЧЕНИЯ ============
 
 @router.message(Command("myconfigs"))
