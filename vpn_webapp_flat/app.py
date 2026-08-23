@@ -143,6 +143,9 @@ class _TargetShim:
     async def answer_photo(self, photo, caption=None, **kw):
         return await bot.send_photo(self.chat_id, photo, caption=caption, **kw)
 
+    async def answer_video(self, video, caption=None, **kw):
+        return await bot.send_video(self.chat_id, video, caption=caption, **kw)
+
 
 # ───────────────────────────────── API ─────────────────────────────────
 
