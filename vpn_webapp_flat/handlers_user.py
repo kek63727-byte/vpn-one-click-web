@@ -2327,10 +2327,18 @@ async def cb_howto(call: CallbackQuery):
 async def cb_guide(call: CallbackQuery):
     lang = await _lang(call.from_user.id)
     platform = call.data.split(":", 1)[1]
+
+    if platform == "video":
+        from config import CONNECT_VIDEO_FILE_ID
+        if CONNECT_VIDEO_FILE_ID:
+            caption = _tt(lang, "📹 Видео-инструкция по подключению через happ",
+                               "📹 Video guide: how to connect via happ")
+            await call.message.answer_video(CONNECT_VIDEO_FILE_ID, caption=caption)
+        await call.answer()
+        return
+
     await _edit(call, texts.guide(platform, lang), guide_back_kb(lang))
     await call.answer()
-
-
 # ============ ПРОДЛЕНИЕ ============
 
 @router.callback_query(F.data.startswith("renew:"))
