@@ -199,7 +199,7 @@ async def sub_link(request):
     cfg = await db.get_config(config_id)
     if not cfg or cfg.get("status") != "sold":
         return web.Response(status=404, text="not found")
-    return web.Response(text=cfg["config_text"], content_type="text/plain; charset=utf-8")
+    return web.Response(text=cfg["config_text"], content_type="text/plain", charset="utf-8")
 
 @routes.get("/happ-open/{config_id}")
 async def happ_open_page(request):
