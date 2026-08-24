@@ -101,3 +101,19 @@ def make_qr_png(text: str) -> bytes:
             b'\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01'
             b'\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
         )
+
+        def sub_token(config_id: int) -> str:
+    """Короткий HMAC-токен для публичной ссылки на конфиг (для happ-диплинка)."""
+    import hmac, hashlib
+    from config import BOT_TOKEN
+    return hmac.new(BOT_TOKEN.encode(), str(config_id).encode(), hashlib.sha256).hexdigest()[:20]
+
+
+def sub_url(config_id: int) -> str:
+    from config import PUBLIC_BASE_URL
+    base = PUBLIC_BASE_URL.rstrip("/")
+    return f"{base}/sub/{config_id}/{sub_token(config_id)}"
+
+
+def happ_deeplink(config_id: int) -> str:
+    return f"happ://add/{sub_url(config_id)}"
