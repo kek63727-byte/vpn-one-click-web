@@ -102,9 +102,11 @@ def make_qr_png(text: str) -> bytes:
             b'\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
         )
 
-        def sub_token(config_id: int) -> str:
+
+def sub_token(config_id: int) -> str:
     """Короткий HMAC-токен для публичной ссылки на конфиг (для happ-диплинка)."""
-    import hmac, hashlib
+    import hmac
+    import hashlib
     from config import BOT_TOKEN
     return hmac.new(BOT_TOKEN.encode(), str(config_id).encode(), hashlib.sha256).hexdigest()[:20]
 
