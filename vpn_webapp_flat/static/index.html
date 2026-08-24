@@ -1577,8 +1577,8 @@ function renderConnections() {
         </div>
         ${isActive ? `
         <div class="conn-actions">
-${cfg.config_type === 'vless' ? `
-<button class="conn-action-btn act-happ" onclick="openInHapp('${cfgId}')">
+${cfg.config_type === 'vless' && cfg.happ_open_url ? `
+<button class="conn-action-btn act-happ" onclick="openInHapp('${cfg.happ_open_url}')">
   <svg class="icon"><use href="#i-link"/></svg>
   <span>В happ</span>
 </button>` : ''}
@@ -1614,31 +1614,10 @@ function requestFreeze(configId, region) {
   tg?.HapticFeedback?.impactOccurred('light');
 }
 
-function openInHapp(configId) {
-  // Открываем happ СРАЗУ и синхронно — это должно случиться прямо
-  // в обработчике клика, иначе iOS заблокирует переход в приложение.
-  if (tg) tg.openLink('happ://'); else window.location.href = 'happ://';
+function openInHapp(url) {
+  if (!url) return;
+  if (tg) tg.openLink(url); else window.location.href = url;
   tg?.HapticFeedback?.impactOccurred('light');
-
-  // Конфиг копируем в буфер параллельно, пока Happ уже открывается.
-  copyHappConfigInBackground(configId);
-}
-
-async function copyHappConfigInBackground(configId) {
-  if (!tg?.initData) return;
-  try {
-    const resp = await fetch('/get_config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ config_id: configId, init_data: tg.initData }),
-    });
-    const data = await resp.json();
-    if (data.error || !data.config_text) return;
-    await navigator.clipboard.writeText(data.config_text);
-    showToast('✅ Конфиг скопирован — в happ жми «+» → «Импорт из буфера обмена»');
-  } catch (err) {
-    // тихо игнорируем — Happ уже открыт, это лишь фоновая подстраховка
-  }
 }
 
 function hideFreezeModal() {
