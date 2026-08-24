@@ -1614,8 +1614,18 @@ function requestFreeze(configId, region) {
   tg?.HapticFeedback?.impactOccurred('light');
 }
 
-async function openInHapp(configId) {
-  if (!tg?.initData) { showToast('Открой мини-апп через бот'); return; }
+function openInHapp(configId) {
+  // Открываем happ СРАЗУ и синхронно — это должно случиться прямо
+  // в обработчике клика, иначе iOS заблокирует переход в приложение.
+  if (tg) tg.openLink('happ://'); else window.location.href = 'happ://';
+  tg?.HapticFeedback?.impactOccurred('light');
+
+  // Конфиг копируем в буфер параллельно, пока Happ уже открывается.
+  copyHappConfigInBackground(configId);
+}
+
+async function copyHappConfigInBackground(configId) {
+  if (!tg?.initData) return;
   try {
     const resp = await fetch('/get_config', {
       method: 'POST',
@@ -1623,23 +1633,11 @@ async function openInHapp(configId) {
       body: JSON.stringify({ config_id: configId, init_data: tg.initData }),
     });
     const data = await resp.json();
-    if (data.error || !data.config_text) {
-      showToast('❌ Не удалось получить конфиг');
-      return;
-    }
-    // Копируем конфиг в буфер — это единственный официально
-    // поддерживаемый Happ способ «одного тапа» (deep-link happ://add/<url>
-    // для автоматического импорта Happ пока не поддерживает).
+    if (data.error || !data.config_text) return;
     await navigator.clipboard.writeText(data.config_text);
-    showToast('✅ Скопировано! Открой happ → «+» → «Импорт из буфера обмена»');
-    tg?.HapticFeedback?.impactOccurred('light');
-    // Пытаемся вывести Happ на передний план, если он установлен.
-    // Если схема не зарегистрирована в системе — просто ничего не произойдёт.
-    setTimeout(() => {
-      if (tg) tg.openLink('happ://'); else window.location.href = 'happ://';
-    }, 250);
+    showToast('✅ Конфиг скопирован — в happ жми «+» → «Импорт из буфера обмена»');
   } catch (err) {
-    showToast('❌ ' + err.message);
+    // тихо игнорируем — Happ уже открыт, это лишь фоновая подстраховка
   }
 }
 
