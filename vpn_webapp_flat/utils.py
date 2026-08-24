@@ -119,3 +119,12 @@ def sub_url(config_id: int) -> str:
 
 def happ_deeplink(config_id: int) -> str:
     return f"happ://add/{sub_url(config_id)}"
+
+def happ_open_url(config_id: int) -> str:
+    """https-ссылка на промежуточную страницу-редирект (см. /happ-open в webapp.py).
+    Открывается через tg.openLink() ВО ВНЕШНЕМ браузере — Telegram Mini App
+    WebView блокирует custom URL-схемы (happ://) напрямую, а обычный внешний
+    браузер (Safari/Chrome) их спокойно обрабатывает."""
+    from config import PUBLIC_BASE_URL
+    base = PUBLIC_BASE_URL.rstrip("/")
+    return f"{base}/happ-open/{config_id}?t={sub_token(config_id)}"
