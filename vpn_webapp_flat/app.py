@@ -182,6 +182,25 @@ async def api_prices(request):
     resp.headers["Pragma"] = "no-cache"
     return resp
 
+    import hmac  # если ещё не импортирован в файле (он уже есть — можно пропустить)
+from utils import sub_token
+
+@routes.get("/sub/{config_id}/{token}")
+async def sub_link(request):
+    """Публичная ссылка на конфиг для happ://add/... — БЕЗ Telegram init_data,
+    Happ открывает её как обычный браузер. Защита — HMAC-токен в самой ссылке."""
+    try:
+        config_id = int(request.match_info["config_id"])
+    except ValueError:
+        return web.Response(status=404, text="not found")
+    token = request.match_info["token"]
+    if not hmac.compare_digest(sub_token(config_id), token):
+        return web.Response(status=404, text="not found")
+    cfg = await db.get_config(config_id)
+    if not cfg or cfg.get("status") != "sold":
+        return web.Response(status=404, text="not found")
+    return web.Response(text=cfg["config_text"], content_type="text/plain; charset=utf-8")
+    
 @routes.post("/me")
 async def api_me(request):
     auth = await _auth(request)
