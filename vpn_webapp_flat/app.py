@@ -201,6 +201,51 @@ async def sub_link(request):
         return web.Response(status=404, text="not found")
     return web.Response(text=cfg["config_text"], content_type="text/plain; charset=utf-8")
 
+@routes.get("/happ-open/{config_id}")
+async def happ_open_page(request):
+    """Промежуточная HTML-страница: открывается во внешнем браузере и оттуда
+    сама перенаправляет в happ:// — то, что нельзя сделать напрямую из
+    Telegram Mini App WebView (там custom-схемы блокируются)."""
+    from utils import happ_deeplink, sub_token
+    try:
+        config_id = int(request.match_info["config_id"])
+    except ValueError:
+        return web.Response(status=404, text="not found")
+
+    token = request.query.get("t", "")
+    if not hmac.compare_digest(sub_token(config_id), token):
+        return web.Response(status=404, text="not found")
+
+    cfg = await db.get_config(config_id)
+    if not cfg or cfg.get("status") != "sold":
+        return web.Response(status=404, text="Конфиг не найден или недействителен")
+
+    deeplink = happ_deeplink(config_id)
+
+    html = f"""<!DOCTYPE html>
+<html lang="ru"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Открываем Happ…</title>
+<style>
+  body {{ background:#050307; color:#f6f4ff; font-family:-apple-system,Inter,sans-serif;
+          display:flex; flex-direction:column; align-items:center; justify-content:center;
+          height:100vh; margin:0; padding:24px; text-align:center; }}
+  .spinner {{ width:40px; height:40px; border:3px solid rgba(124,58,237,0.25);
+              border-top-color:#7c3aed; border-radius:50%; animation:spin .8s linear infinite; margin-bottom:20px; }}
+  @keyframes spin {{ to {{ transform:rotate(360deg); }} }}
+  a.btn {{ display:inline-block; margin-top:18px; padding:14px 26px; border-radius:14px;
+           background:linear-gradient(135deg,#7c3aed,#b794ff); color:#fff; text-decoration:none; font-weight:700; }}
+  p {{ color:#a89fc4; font-size:14px; line-height:1.6; max-width:320px; }}
+</style></head>
+<body>
+  <div class="spinner"></div>
+  <p>Открываем приложение Happ…<br>Если ничего не произошло — нажми кнопку ниже.</p>
+  <a class="btn" id="manualBtn" href="{deeplink}">Открыть вручную</a>
+  <script>
+    window.location.href = "{deeplink}";
+  </script>
+</body></html>"""
+    return web.Response(text=html, content_type="text/html")
 
 @routes.post("/me")
 async def api_me(request):
