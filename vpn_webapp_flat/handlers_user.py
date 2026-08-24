@@ -1997,6 +1997,7 @@ async def _fulfill(target: Message, user_id: int, order: dict, bot: Bot, paid_mo
             texts.sub_created(order["devices"], lang),
             reply_markup=main_menu_kb(lang)
         )
+        await _show_my(target, user_id, lang)
 
         if paid_money:
             if order.get("promo"):
@@ -2049,6 +2050,8 @@ async def _fulfill(target: Message, user_id: int, order: dict, bot: Bot, paid_mo
                 f"🎁 <b>{applied}</b> bonus days added to your subscription!"
             )
         )
+
+    await _show_my(target, user_id, lang)
 
     if paid_money:
         if order.get("promo"):
@@ -2285,6 +2288,22 @@ async def send_config_to(bot: Bot, user_id: int, cfg: dict, lang: str = "ru"):
 
 # ============ МОИ ПОДКЛЮЧЕНИЯ ============
 
+@router.callback_query(F.data.startswith("getcfg:"))
+async def cb_get_config(call: CallbackQuery):
+    lang = await _lang(call.from_user.id)
+    cid = int(call.data.split(":", 1)[1])
+    cfg = await db.get_config(cid)
+    if not cfg or cfg["user_id"] != call.from_user.id or cfg["status"] != "sold":
+        await call.answer(_tt(lang, "Конфиг не найден 😔", "Config not found 😔"), show_alert=True)
+        return
+    await call.answer()
+    try:
+        exp = datetime.fromisoformat((cfg.get("expires_at") or "").replace("Z", ""))
+    except Exception:
+        exp = datetime.utcnow()
+    await _send_config(call.message, cfg, exp, 1, 1, lang)
+
+
 @router.message(Command("myconfigs"))
 async def cmd_my(message: Message):
     lang = await _lang(message.from_user.id)
@@ -2301,13 +2320,7 @@ async def cb_my(call: CallbackQuery):
 async def _show_my(message: Message, user_id: int, lang: str):
     subs = await db.user_subscriptions(user_id)
     configs = await db.user_configs(user_id)
-    # В списке показываем ТОЛЬКО активные конфиги. Истёкшие (status != 'sold')
-    # не выводим вовсе, чтобы не засоряли «Мои подключения».
-    # (Заморозка статус не меняет — замороженные остаются 'sold' и показываются.)
     active_configs = [c for c in configs if c["status"] == "sold"]
-    # Только ОДИН тариф — самый свежий. user_subscriptions отдаёт подписки по id
-    # по убыванию, поэтому subs[0] — последняя купленная. Старые в списке не показываем:
-    # купил новую — старая сразу «пропадает» из «Мои подключения» (из базы не удаляется).
     latest_sub = subs[0] if subs else None
     free_subs = [latest_sub] if (latest_sub and latest_sub["free_slots"] > 0) else []
     if not free_subs and not active_configs:
@@ -2315,19 +2328,20 @@ async def _show_my(message: Message, user_id: int, lang: str):
                                  "📁 You have no active connections yet."),
                              reply_markup=back_to_menu_kb(lang))
         return
-    # подписки на несколько устройств — со свободными слотами для активации
     for s in free_subs:
         await message.answer(texts.sub_slot_block(s, lang),
                              reply_markup=sub_activate_kb(s["id"], s["free_slots"], lang))
     if active_configs:
         await message.answer(_tt(lang, "📁 <b>Твои подключения:</b>", "📁 <b>Your connections:</b>"))
         for cfg in active_configs:
-            status = _tt(lang, "✅ активен", "✅ active")
             exp = cfg["expires_at"][:10] if cfg["expires_at"] else "—"
             until = _tt(lang, "до", "until")
+            plan_label = cfg.get("plan") or "standard"
+            ctype = cfg.get("config_type") or "wireguard"
             await message.answer(
-                f"{flag(cfg['region'])} <b>{texts.region_name(cfg['region'], lang)}</b> — {status}\n⏳ {until}: <code>{exp}</code>",
-                reply_markup=connection_kb(cfg["id"], lang),
+                f"{flag(cfg['region'])} <b>{texts.region_name(cfg['region'], lang)}</b>\n"
+                f"⏳ {until}: <code>{exp}</code> · {plan_label} · 🟢 ACTIVE",
+                reply_markup=connection_kb(cfg["id"], lang, ctype),
             )
 
 
