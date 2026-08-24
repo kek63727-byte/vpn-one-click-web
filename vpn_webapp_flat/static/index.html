@@ -1577,11 +1577,11 @@ function renderConnections() {
         </div>
         ${isActive ? `
         <div class="conn-actions">
-          ${cfg.config_type === 'vless' && cfg.happ_link ? `
-          <button class="conn-action-btn act-happ" onclick="openInHapp('${cfg.happ_link}')">
-            <svg class="icon"><use href="#i-link"/></svg>
-            <span>В happ</span>
-          </button>` : ''}
+${cfg.config_type === 'vless' ? `
+<button class="conn-action-btn act-happ" onclick="openInHapp('${cfgId}')">
+  <svg class="icon"><use href="#i-link"/></svg>
+  <span>В happ</span>
+</button>` : ''}
           <button class="conn-action-btn act-dl" onclick="openConfigModal('${cfgId}', this)">
             <svg class="icon"><use href="#i-download"/></svg>
             <span>Конфиг</span>
@@ -1614,10 +1614,33 @@ function requestFreeze(configId, region) {
   tg?.HapticFeedback?.impactOccurred('light');
 }
 
-function openInHapp(url) {
-  if (!url) return;
-  if (tg) tg.openLink(url); else window.location.href = url;
-  tg?.HapticFeedback?.impactOccurred('light');
+async function openInHapp(configId) {
+  if (!tg?.initData) { showToast('Открой мини-апп через бот'); return; }
+  try {
+    const resp = await fetch('/get_config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config_id: configId, init_data: tg.initData }),
+    });
+    const data = await resp.json();
+    if (data.error || !data.config_text) {
+      showToast('❌ Не удалось получить конфиг');
+      return;
+    }
+    // Копируем конфиг в буфер — это единственный официально
+    // поддерживаемый Happ способ «одного тапа» (deep-link happ://add/<url>
+    // для автоматического импорта Happ пока не поддерживает).
+    await navigator.clipboard.writeText(data.config_text);
+    showToast('✅ Скопировано! Открой happ → «+» → «Импорт из буфера обмена»');
+    tg?.HapticFeedback?.impactOccurred('light');
+    // Пытаемся вывести Happ на передний план, если он установлен.
+    // Если схема не зарегистрирована в системе — просто ничего не произойдёт.
+    setTimeout(() => {
+      if (tg) tg.openLink('happ://'); else window.location.href = 'happ://';
+    }, 250);
+  } catch (err) {
+    showToast('❌ ' + err.message);
+  }
 }
 
 function hideFreezeModal() {
