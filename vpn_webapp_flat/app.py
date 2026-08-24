@@ -216,18 +216,18 @@ async def api_me(request):
 
     # Загружаем активные конфиги пользователя для экрана "Подключения"
     configs = await db.user_configs(user_id)
-active_configs = [
-    {
-        "id": c["id"],
-        "region": c["region"],
-        "plan": c.get("plan", "standard"),
-        "expires_at": (c.get("expires_at") or "")[:10],
-        "status": c.get("status", ""),
-        "config_type": c.get("config_type", "wireguard"),
-        "happ_link": happ_deeplink(c["id"]) if c.get("config_type") == "vless" else None,
-    }
-    for c in configs if c.get("status") == "sold"
-]
+    active_configs = [
+        {
+            "id": c["id"],
+            "region": c["region"],
+            "plan": c.get("plan", "standard"),
+            "expires_at": (c.get("expires_at") or "")[:10],
+            "status": c.get("status", ""),
+            "config_type": c.get("config_type", "wireguard"),
+            "happ_link": happ_deeplink(c["id"]) if c.get("config_type") == "vless" else None,
+        }
+        for c in configs if c.get("status") == "sold"
+    ]
 
     # Реферальный код и статистика
     ref_stats = await db.referral_stats(user_id)
