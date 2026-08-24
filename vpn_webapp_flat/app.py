@@ -31,7 +31,6 @@ import logging
 import os
 import asyncio
 import texts
-from utils import happ_deeplink
 from datetime import timedelta
 from urllib.parse import parse_qsl
 
