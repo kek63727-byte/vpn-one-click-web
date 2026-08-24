@@ -309,9 +309,18 @@
   .ic-pink   { background: rgba(236,72,153,0.15); color: var(--pink); }
   .ic-red    { background: rgba(239,68,68,0.15);  color: var(--red); }
 
-  /* CONNECTIONS */
-  .conn-list { padding: 0 16px; display: flex; flex-direction: column; gap: 10px; margin-bottom: 24px; }
-  .conn-item { display: flex; align-items: center; gap: 12px; }
+   /* CONNECTIONS */
+  .conn-list { padding: 0 16px; display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; }
+  .conn-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+    padding: 14px; overflow: hidden; position: relative;
+  }
+  .conn-card::before {
+    content: ''; position: absolute; right: -24px; top: -24px; width: 90px; height: 90px;
+    border-radius: 50%; background: radial-gradient(circle, rgba(124,58,237,0.10), transparent 70%);
+    pointer-events: none;
+  }
+  .conn-card-top { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; position: relative; }
   .conn-icon { width: 40px; height: 40px; border-radius: 11px; flex-shrink: 0; background: rgba(34,197,94,0.12); color: var(--green); display: flex; align-items: center; justify-content: center; }
   .conn-icon.off { background: rgba(148,163,184,0.1); color: var(--muted); }
   .conn-info { min-width: 0; flex: 1; }
@@ -320,12 +329,48 @@
   .conn-status { font-size: 10px; font-weight: 700; font-family: var(--mono); padding: 3px 9px; border-radius: 100px; text-transform: uppercase; letter-spacing: 0.4px; flex-shrink: 0; }
   .conn-status.active { background: rgba(34,197,94,0.12); color: var(--green); border: 1px solid rgba(34,197,94,0.25); }
   .conn-status.expired { background: rgba(239,68,68,0.1); color: var(--red); border: 1px solid rgba(239,68,68,0.22); }
-  .conn-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
-  .conn-dl-btn { display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; font-family: var(--mono); color: var(--accent2); background: rgba(124,58,237,0.14); border: 1px solid rgba(168,85,247,0.3); padding: 5px 10px; border-radius: 100px; cursor: pointer; white-space: nowrap; }
-  .conn-dl-btn:active { transform: scale(0.94); }
-  .conn-dl-btn svg { width: 12px; height: 12px; }
-  .conn-dl-btn.loading { opacity: 0.6; pointer-events: none; }
-    .conn-dl-btn.report-btn { color: var(--orange); border-color: rgba(245,158,11,0.3); background: rgba(245,158,11,0.08); }
+
+  .conn-actions { display: flex; gap: 6px; position: relative; }
+  .conn-action-btn {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 4px; padding: 10px 4px; border-radius: 12px; cursor: pointer; text-align: center;
+    background: var(--surface); border: 1px solid var(--border); transition: transform .1s, border-color .15s;
+  }
+  .conn-action-btn:active { transform: scale(0.95); }
+  .conn-action-btn svg { width: 16px; height: 16px; }
+  .conn-action-btn span { font-size: 10px; font-weight: 700; letter-spacing: 0.2px; }
+  .conn-action-btn.act-dl { color: var(--accent2); }
+  .conn-action-btn.act-dl:active { border-color: rgba(168,85,247,0.4); }
+  .conn-action-btn.act-freeze { color: var(--cyan); }
+  .conn-action-btn.act-freeze:active { border-color: rgba(34,211,238,0.4); }
+  .conn-action-btn.act-report { color: var(--orange); }
+  .conn-action-btn.act-happ { color: #fff; background: linear-gradient(135deg, #7c3aed, #b794ff); border-color: transparent; }
+  .conn-action-btn.act-report:active { border-color: rgba(245,158,11,0.4); }
+  .conn-action-btn.loading { opacity: 0.5; pointer-events: none; }
+  @keyframes connFlash { 0%,100% { box-shadow: none; } 50% { box-shadow: 0 0 0 2px var(--accent), 0 0 26px rgba(168,85,247,0.5); } }
+.conn-new-flash { animation: connFlash 1.1s ease 2; border-radius: 16px; }
+
+  /* QUICK SETUP CARD */
+.qs-card { margin: 8px 16px 20px; }
+.qs-head { margin-bottom: 14px; }
+.qs-title { font-size: 16px; font-weight: 800; margin-bottom: 3px; }
+.qs-sub { font-size: 12px; color: var(--muted); }
+.qs-tabs { display: flex; gap: 6px; margin-bottom: 14px; overflow-x: auto; scrollbar-width: none; }
+.qs-tabs::-webkit-scrollbar { display: none; }
+.qs-tab { flex-shrink: 0; padding: 8px 14px; border-radius: 10px; background: var(--surface); border: 1.5px solid var(--border); font-size: 12.5px; font-weight: 700; color: var(--dim); cursor: pointer; }
+.qs-tab.active { border-color: var(--border-h); box-shadow: var(--selected-glow); color: var(--text); background: var(--card2); }
+.qs-step { border: 1px solid var(--border); border-radius: 14px; background: var(--surface); margin-bottom: 8px; overflow: hidden; }
+.qs-step-header { display: flex; align-items: center; gap: 10px; padding: 13px 14px; cursor: pointer; }
+.qs-num { width: 24px; height: 24px; border-radius: 8px; background: rgba(124,58,237,0.18); color: var(--accent2); font-family: var(--mono); font-weight: 700; font-size: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.qs-step-title { font-size: 13.5px; font-weight: 700; flex: 1; }
+.qs-chevron { width: 16px; height: 16px; color: var(--muted); transition: transform .2s; transform: rotate(90deg); }
+.qs-step.open .qs-chevron { transform: rotate(-90deg); }
+.qs-step-body { display: none; padding: 0 14px 16px 48px; }
+.qs-step.open .qs-step-body { display: block; }
+.qs-step-text { font-size: 12.5px; color: var(--dim); line-height: 1.55; margin-bottom: 10px; }
+.qs-download-btn { display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; border-radius: 12px; border: none; background: linear-gradient(135deg, #7c3aed, #b794ff); color: white; font-size: 13px; font-weight: 700; cursor: pointer; }
+.qs-download-btn:active { transform: scale(0.97); }
+.qs-step-hint { font-size: 10.5px; color: var(--muted); margin-top: 8px; line-height: 1.4; }
 
   /* CONFIG MODAL */
   .config-modal-sheet { max-height: 82vh; overflow-y: auto; }
@@ -508,6 +553,26 @@
   .offer-cta { position: relative; width: 100%; height: 52px; border-radius: 14px; border: none; background: linear-gradient(135deg, #f6c453, #fde68a); color: #241800; font-weight: 800; font-size: 15px; cursor: pointer; margin-bottom: 8px; }
   .offer-cta:active { transform: scale(0.98); }
   .offer-skip { position: relative; font-size: 12.5px; color: var(--muted); background: none; border: none; cursor: pointer; padding: 6px; }
+
+    /* FREEZE MODAL */
+  .freeze-overlay { display: none; position: fixed; inset: 0; z-index: 700; background: rgba(5,3,7,0.88); backdrop-filter: blur(10px); align-items: center; justify-content: center; padding: 24px; }
+  .freeze-overlay.show { display: flex; }
+  .freeze-card { position: relative; width: 100%; max-width: 340px; background: linear-gradient(165deg, #0f1f22, #0e0a16); border: 1px solid rgba(34,211,238,0.3); border-radius: 24px; padding: 28px 24px 24px; text-align: center; box-shadow: 0 24px 60px -12px rgba(34,211,238,0.3); overflow: hidden; }
+  .freeze-card::before { content: ''; position: absolute; inset: 0; background: radial-gradient(160% 120% at 50% -10%, rgba(34,211,238,0.18), transparent 55%); pointer-events: none; }
+  .freeze-icon-wrap { position: relative; width: 64px; height: 64px; margin: 0 auto 18px; border-radius: 18px; background: rgba(34,211,238,0.12); border: 1px solid rgba(34,211,238,0.3); display: flex; align-items: center; justify-content: center; }
+  .freeze-icon-wrap svg { width: 30px; height: 30px; color: var(--cyan); }
+  .freeze-title { position: relative; font-size: 17px; font-weight: 800; margin-bottom: 8px; }
+  .freeze-sub { position: relative; font-size: 13px; color: var(--muted); line-height: 1.55; margin-bottom: 6px; }
+  .freeze-sub b { color: var(--text); font-weight: 700; }
+  .freeze-price-row { position: relative; display: flex; justify-content: center; gap: 18px; margin: 16px 0 22px; }
+  .freeze-price-item { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .freeze-price-value { font-size: 20px; font-weight: 900; font-family: var(--mono); color: var(--cyan); }
+  .freeze-price-label { font-size: 10px; color: var(--muted); font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.5px; }
+  .freeze-actions-row { position: relative; display: flex; gap: 8px; }
+  .freeze-btn { flex: 1; height: 48px; border-radius: 13px; border: none; font-weight: 700; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .freeze-btn:active { transform: scale(0.97); }
+  .freeze-btn.cancel { background: var(--card); border: 1.5px solid var(--border); color: var(--dim); }
+  .freeze-btn.confirm { background: linear-gradient(135deg, #0891b2, #22d3ee); color: #04222b; box-shadow: 0 8px 24px -8px rgba(34,211,238,0.5); }
 </style>
 
 <style id="recruit-styles-block">
@@ -712,6 +777,7 @@
     <div class="icon-btn" onclick="showScreen('shop')"><svg class="icon"><use href="#i-bag"/></svg></div>
   </div>
 
+  <div class="card qs-card" id="quickSetupCard"></div>
   <div class="section-label" style="margin-top:8px;">Активные устройства</div>
   <div class="conn-list" id="connList"></div>
 
@@ -1090,6 +1156,33 @@
   </div>
 </div>
 
+<!-- FREEZE CONFIRM MODAL -->
+<div class="freeze-overlay" id="freezeOverlay">
+  <div class="freeze-card">
+    <div class="freeze-icon-wrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2v20M4.5 7l15 10M19.5 7l-15 10M2 12h20"/>
+      </svg>
+    </div>
+    <div class="freeze-title">Заморозить подписку?</div>
+    <div class="freeze-sub" id="freezeRegionText">Регион: <b>—</b></div>
+    <div class="freeze-price-row">
+      <div class="freeze-price-item">
+        <div class="freeze-price-value" id="freezeDaysValue">7</div>
+        <div class="freeze-price-label">дней</div>
+      </div>
+      <div class="freeze-price-item">
+        <div class="freeze-price-value" id="freezePriceValue">10 ₽</div>
+        <div class="freeze-price-label">стоимость</div>
+      </div>
+    </div>
+    <div class="freeze-actions-row">
+      <button class="freeze-btn cancel" onclick="hideFreezeModal()">Отмена</button>
+      <button class="freeze-btn confirm" onclick="confirmFreeze()">Заморозить</button>
+    </div>
+  </div>
+</div>
+
 <!-- HOWTO MODAL (in-app, onboarding style) -->
 <div class="howto-overlay" id="howtoOverlay">
   <div class="howto-ambient"></div>
@@ -1205,7 +1298,7 @@ const CONFIG = {
   primePrices: { month: 890, year: 2490 },
   plans: {
     standard: {
-      title: 'Standard', icon: 'shield', tone: 'standard', speed: '200 Мбит/с', premiumAccess: false,
+      title: 'Standard', icon: 'shield', tone: 'standard', speed: '100 Мбит/с', premiumAccess: false,
       features: ['Стандартное шифрование', 'Без доступа к Premium-серверам', 'Базовая поддержка'],
       prices: {
         1: { month: 129, '3month': 299, '6month': 449, year: 599 },
@@ -1214,7 +1307,7 @@ const CONFIG = {
       }
     },
     premium: {
-      title: 'Premium', icon: 'gem', tone: 'premium', speed: '350 Мбит/с', premiumAccess: true,
+      title: 'Premium', icon: 'gem', tone: 'premium', speed: '200 Мбит/с', premiumAccess: true,
       features: ['Доступ к Premium-серверам', 'Блокировка рекламы', 'Приоритетная поддержка'],
       prices: {
         1: { month: 199, '3month': 499, '6month': 799, year: 999 },
@@ -1223,7 +1316,7 @@ const CONFIG = {
       }
     },
     ultimate: {
-      title: 'Ultimate', icon: 'spark', tone: 'ultimate', speed: '500 Мбит/с', premiumAccess: true,
+      title: 'Ultimate', icon: 'spark', tone: 'ultimate', speed: '250 Мбит/с', premiumAccess: true,
       features: ['Доступ к Premium-серверам', 'Блокировка рекламы', 'Двойное шифрование', 'Максимальный приоритет'],
       prices: {
         1: { month: 249, '3month': 649, '6month': 999, year: 1199 },
@@ -1247,8 +1340,13 @@ const CONFIG = {
     ['Россия', true], ['Южная Корея', true], ['Болгария', true], ['Словения', true],
     ['Австралия', true], ['Швеция', true],
   ],
+  HAPP_LINKS: {
+    ios: 'https://apps.apple.com/us/app/happ-proxy-utility/id6504287215',
+    android: 'https://play.google.com/store/apps/details?id=com.happproxy',
+    windows: 'https://www.happ.su/main',
+    mac: 'https://apps.apple.com/us/app/happ-proxy-utility/id6504287215',
+  },
 };
-
 // ══════════════════════ TELEGRAM INIT ══════════════════════
 const tg = window.Telegram?.WebApp;
 if (tg) { tg.ready(); tg.expand(); tg.setHeaderColor?.('#050307'); tg.setBackgroundColor?.('#050307'); }
@@ -1320,7 +1418,7 @@ function maybeShowRecruitBanner() {
              padding:6px 11px;border-radius:8px;cursor:pointer;white-space:nowrap;flex-shrink:0;">
       Подать заявку
     </div>
-    <button onclick="closeRecruitBanner()"
+        <button onclick="closeRecruitBanner()"
       style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:4px 6px;line-height:1;">✕</button>
   `;
   document.body.appendChild(banner);
@@ -1408,6 +1506,8 @@ async function loadUserData() {
     userState.activeConfigs = data.active_configs || [];
     userState.referralCode = data.referral_code || String(data.user_id);
     userState.referralCount = data.ref_invited || 0;
+    userState.freezePrice = data.freeze_price || 0;
+    userState.freezeDays = data.freeze_days || 0;
 
     // Обновляем UI профиля
     document.getElementById('balanceAmount').textContent = userState.balance + ' ₽';
@@ -1464,25 +1564,105 @@ function renderConnections() {
     const exp = cfg.expires_at || '—';
     const cfgId = cfg.id ?? cfg.config_id ?? i;
     return `
-      <div class="conn-item">
-        <div class="conn-icon ${isActive ? '' : 'off'}">
-          <svg class="icon" style="width:20px;height:20px;"><use href="#i-globe"/></svg>
-        </div>
-        <div class="conn-info">
-          <div class="conn-name">${cfg.region}</div>
-          <div class="conn-meta">до ${exp} · ${cfg.plan || 'standard'}</div>
-        </div>
-                <div class="conn-side">
+      <div class="conn-card">
+        <div class="conn-card-top">
+          <div class="conn-icon ${isActive ? '' : 'off'}">
+            <svg class="icon" style="width:20px;height:20px;"><use href="#i-globe"/></svg>
+          </div>
+          <div class="conn-info">
+            <div class="conn-name">${cfg.region}</div>
+            <div class="conn-meta">до ${exp} · ${cfg.plan || 'standard'}</div>
+          </div>
           <span class="conn-status ${isActive ? 'active' : 'expired'}">${isActive ? 'active' : 'expired'}</span>
-          ${isActive ? `<button class="conn-dl-btn" onclick="openConfigModal('${cfgId}', this)">
-            <svg class="icon"><use href="#i-download"/></svg>Конфиг
-          </button>
-          <button class="conn-dl-btn report-btn" onclick="openReportModal('${cfgId}', '${cfg.region}')">
-            <svg class="icon"><use href="#i-bell"/></svg>Проблема
-          </button>` : ''}
         </div>
+        ${isActive ? `
+        <div class="conn-actions">
+          ${cfg.config_type === 'vless' && cfg.happ_link ? `
+          <button class="conn-action-btn act-happ" onclick="openInHapp('${cfg.happ_link}')">
+            <svg class="icon"><use href="#i-link"/></svg>
+            <span>В happ</span>
+          </button>` : ''}
+          <button class="conn-action-btn act-dl" onclick="openConfigModal('${cfgId}', this)">
+            <svg class="icon"><use href="#i-download"/></svg>
+            <span>Конфиг</span>
+          </button>
+          <button class="conn-action-btn act-freeze" onclick="requestFreeze('${cfgId}', '${cfg.region}')">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2v20M4.5 7l15 10M19.5 7l-15 10M2 12h20"/>
+            </svg>
+            <span>Заморозить</span>
+          </button>
+          <button class="conn-action-btn act-report" onclick="openReportModal('${cfgId}', '${cfg.region}')">
+            <svg class="icon"><use href="#i-bell"/></svg>
+            <span>Проблема</span>
+          </button>
+        </div>` : ''}
       </div>`;
   }).join('');
+}
+
+// ══════════════════════ ЗАМОРОЗКА ПОДПИСКИ ══════════════════════
+let freezePendingConfigId = null;
+
+function requestFreeze(configId, region) {
+  if (!tg?.initData) { showToast('Открой мини-апп через бот'); return; }
+  freezePendingConfigId = configId;
+  document.getElementById('freezeRegionText').innerHTML = `Регион: <b>${region}</b>`;
+  document.getElementById('freezeDaysValue').textContent = userState.freezeDays || 0;
+  document.getElementById('freezePriceValue').textContent = (userState.freezePrice || 0) + ' ₽';
+  document.getElementById('freezeOverlay').classList.add('show');
+  tg?.HapticFeedback?.impactOccurred('light');
+}
+
+function openInHapp(url) {
+  if (!url) return;
+  if (tg) tg.openLink(url); else window.location.href = url;
+  tg?.HapticFeedback?.impactOccurred('light');
+}
+
+function hideFreezeModal() {
+  document.getElementById('freezeOverlay').classList.remove('show');
+  freezePendingConfigId = null;
+}
+
+function confirmFreeze() {
+  const configId = freezePendingConfigId;
+  hideFreezeModal();
+  if (configId != null) doFreeze(configId);
+}
+
+async function doFreeze(configId) {
+  try {
+    const resp = await fetch('/freeze_config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config_id: configId, init_data: tg.initData }),
+    });
+    const data = await resp.json();
+
+    if (data.error) {
+      if (data.error === 'need_topup') {
+        const need = Math.max(50, (data.to_pay || 0) - (data.balance || 0));
+        showToast(`💳 Недостаточно баланса. Пополни на ${need} ₽`);
+        showTopupModalWithCustom(need);
+        return;
+      }
+      if (data.error === 'cooldown') {
+        showToast(`⏳ Следующая заморозка доступна с ${data.next_available}`);
+        return;
+      }
+      showToast('❌ Не удалось заморозить');
+      return;
+    }
+
+    userState.balance = data.balance;
+    document.getElementById('balanceAmount').textContent = data.balance + ' ₽';
+    showToast(`✅ Заморожено до ${data.new_expires_at}`);
+    tg?.HapticFeedback?.notificationOccurred('success');
+    await loadUserData();
+  } catch (err) {
+    showToast('❌ ' + err.message);
+  }
 }
 
 // ══════════════════════ КОНФИГ: скачивание прямо в мини-аппе ══════════════════════
@@ -1726,6 +1906,74 @@ const HOWTO_CONTENT = {
     ]
   },
 };
+
+const QUICK_SETUP = {
+  ios:     { label: 'iOS',     downloadLabel: 'Скачать в App Store',   downloadUrl: CONFIG.HAPP_LINKS.ios },
+  android: { label: 'Android', downloadLabel: 'Скачать в Google Play', downloadUrl: CONFIG.HAPP_LINKS.android },
+  windows: { label: 'Windows', downloadLabel: 'Скачать для Windows',   downloadUrl: CONFIG.HAPP_LINKS.windows },
+  mac:     { label: 'macOS',   downloadLabel: 'Скачать для macOS',     downloadUrl: CONFIG.HAPP_LINKS.mac },
+};
+let qsActiveTab = 'ios';
+let qsOpenStep = 1;
+
+function renderQuickSetup() {
+  const wrap = document.getElementById('quickSetupCard');
+  if (!wrap) return;
+  const p = QUICK_SETUP[qsActiveTab];
+  wrap.innerHTML = `
+    <div class="qs-head">
+      <div class="qs-title">Быстрая настройка</div>
+      <div class="qs-sub">Выполните 3 этапа настройки</div>
+    </div>
+    <div class="qs-tabs">
+      ${Object.entries(QUICK_SETUP).map(([key, v]) => `
+        <div class="qs-tab ${key === qsActiveTab ? 'active' : ''}" onclick="selectQsTab('${key}')">${v.label}</div>
+      `).join('')}
+    </div>
+    <div class="qs-step ${qsOpenStep===1?'open':''}">
+      <div class="qs-step-header" onclick="toggleQsStep(1)">
+        <div class="qs-num">1</div>
+        <div class="qs-step-title">Скачайте Happ</div>
+        <svg class="icon qs-chevron"><use href="#i-chevron"/></svg>
+      </div>
+      <div class="qs-step-body">
+        <div class="qs-step-text">Скачайте и установите приложение Happ.</div>
+        <button class="qs-download-btn" onclick="openHappDownload()">
+          <svg class="icon" style="width:15px;height:15px;"><use href="#i-download"/></svg>
+          ${p.downloadLabel}
+        </button>
+        <div class="qs-step-hint">После установки вернитесь и откройте Этап 2 «Добавление подписки»</div>
+      </div>
+    </div>
+    <div class="qs-step ${qsOpenStep===2?'open':''}">
+      <div class="qs-step-header" onclick="toggleQsStep(2)">
+        <div class="qs-num">2</div>
+        <div class="qs-step-title">Добавление подписки</div>
+        <svg class="icon qs-chevron"><use href="#i-chevron"/></svg>
+      </div>
+      <div class="qs-step-body">
+        <div class="qs-step-text">Открой «Активные устройства» ниже и нажми <b>«Открыть в happ»</b> у нужного конфига — подписка добавится в приложение автоматически. Либо нажми «Конфиг» → «Копировать» и импортируй вручную через «+» → «Импорт из буфера обмена» в happ.</div>
+      </div>
+    </div>
+    <div class="qs-step ${qsOpenStep===3?'open':''}">
+      <div class="qs-step-header" onclick="toggleQsStep(3)">
+        <div class="qs-num">3</div>
+        <div class="qs-step-title">Запуск</div>
+        <svg class="icon qs-chevron"><use href="#i-chevron"/></svg>
+      </div>
+      <div class="qs-step-body">
+        <div class="qs-step-text">Нажми на добавленное подключение в списке happ — оно подключится к серверу автоматически.</div>
+      </div>
+    </div>
+  `;
+  patchIconHrefs(wrap);
+}
+function selectQsTab(key) { qsActiveTab = key; renderQuickSetup(); tg?.HapticFeedback?.selectionChanged(); }
+function toggleQsStep(n) { qsOpenStep = (qsOpenStep === n) ? 0 : n; renderQuickSetup(); tg?.HapticFeedback?.selectionChanged(); }
+function openHappDownload() {
+  const url = QUICK_SETUP[qsActiveTab].downloadUrl;
+  if (tg) tg.openLink(url); else window.open(url, '_blank');
+}
 
 let howtoActiveTab = 'ios';
 
@@ -2034,9 +2282,8 @@ async function handlePay() {
     }
 
     if (data.paid) {
-      // Оплачено бонусным балансом — бэкенд может сразу отдать конфиг
       pendingOrder = null;
-      showSuccess(data.config);
+      await afterPurchase();
       return;
     }
 
@@ -2069,7 +2316,7 @@ async function checkPendingPayment() {
     const d = await r.json();
     if (d.status === 'paid') {
       pendingOrder = null;
-      showSuccess(d.config);
+      await afterPurchase();
       return true;
     }
   } catch (e) {}
@@ -2375,6 +2622,25 @@ if (urlParams.get('status') === 'success') {
   showSuccess();
 }
 
+async function afterPurchase() {
+  tg?.HapticFeedback?.notificationOccurred('success');
+  await loadUserData();          // подтягиваем свежий список конфигов
+  showScreen('connections');
+  showToast('✅ Оплата прошла! Конфиг готов ниже 👇');
+  highlightNewestConnection();
+}
+
+function highlightNewestConnection() {
+  requestAnimationFrame(() => {
+    const first = document.querySelector('#connList .conn-card');   // ← актуальный класс
+    if (first) {
+      first.classList.add('conn-new-flash');
+      first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setTimeout(() => first.classList.remove('conn-new-flash'), 2400);
+    }
+  });
+}
+
 // ══════════════════════ ONBOARDING ══════════════════════
 (function onboarding() {
   const uid = tg?.initDataUnsafe?.user?.id || 'guest';
@@ -2570,6 +2836,7 @@ if (pendingTopup) checkPendingTopup();
 // Загружаем данные с сервера при старте
 loadUserData();
 maybeShowRecruitBanner(); // ← теперь вызывается всегда, не зависит от tg
+renderQuickSetup();
 </script>
 <script src="/static/admin.js"></script>
 
