@@ -329,12 +329,17 @@ def renew_kb(config_id, lang="ru"):
     return kb.as_markup()
 
 
-def connection_kb(config_id, lang="ru"):
+def connection_kb(config_id, lang="ru", config_type="wireguard"):
     kb = InlineKeyboardBuilder()
+    if config_type == "vless":
+        from utils import happ_deeplink
+        kb.button(text=_t(lang, "📲 Открыть в happ", "📲 Open in happ"),
+                  url=happ_deeplink(config_id))
+        kb.button(text=_t(lang, "⬇️ Конфиг", "⬇️ Config"), callback_data=f"getcfg:{config_id}")
     kb.button(text=_t(lang, "🔄 Продлить", "🔄 Renew"), callback_data=f"renew:{config_id}")
     kb.button(text=_t(lang, "🔁 Заменить конфиг", "🔁 Replace config"), callback_data=f"rep:{config_id}")
     kb.button(text=_t(lang, "⏸ Заморозить", "⏸ Pause"), callback_data=f"frz:{config_id}")
-    kb.adjust(2, 1)
+    kb.adjust(2, 2, 1) if config_type == "vless" else kb.adjust(2, 1)
     return kb.as_markup()
 
 
