@@ -39,6 +39,7 @@ from aiogram import Bot
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiohttp import web
+from utils import happ_deeplink, happ_open_url
 
 import db
 import store
@@ -261,21 +262,20 @@ async def api_me(request):
 
     # Загружаем активные конфиги пользователя для экрана "Подключения"
     configs = await db.user_configs(user_id)
-from utils import happ_open_url  # добавь этот импорт наверху файла, рядом с happ_deeplink
 
-active_configs = [
-    {
-        "id": c["id"],
-        "region": c["region"],
-        "plan": c.get("plan", "standard"),
-        "expires_at": (c.get("expires_at") or "")[:10],
-        "status": c.get("status", ""),
-        "config_type": c.get("config_type", "wireguard"),
-        "happ_link": happ_deeplink(c["id"]) if c.get("config_type") == "vless" else None,
-        "happ_open_url": happ_open_url(c["id"]) if c.get("config_type") == "vless" else None,
-    }
-    for c in configs if c.get("status") == "sold"
-]
+    active_configs = [
+        {
+            "id": c["id"],
+            "region": c["region"],
+            "plan": c.get("plan", "standard"),
+            "expires_at": (c.get("expires_at") or "")[:10],
+            "status": c.get("status", ""),
+            "config_type": c.get("config_type", "wireguard"),
+            "happ_link": happ_deeplink(c["id"]) if c.get("config_type") == "vless" else None,
+            "happ_open_url": happ_open_url(c["id"]) if c.get("config_type") == "vless" else None,
+        }
+        for c in configs if c.get("status") == "sold"
+    ]
 
     # Реферальный код и статистика
     ref_stats = await db.referral_stats(user_id)
