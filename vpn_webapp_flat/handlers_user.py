@@ -2203,17 +2203,20 @@ async def send_config_to(bot: Bot, user_id: int, cfg: dict, lang: str = "ru"):
 @router.callback_query(F.data.startswith("getcfg:"))
 async def cb_get_config(call: CallbackQuery):
     lang = await _lang(call.from_user.id)
-    cid = int(call.data.split(":", 1)[1])
-    cfg = await db.get_config(cid)
-    if not cfg or cfg["user_id"] != call.from_user.id or cfg["status"] != "sold":
-        await call.answer(_tt(lang, "Конфиг не найден 😔", "Config not found 😔"), show_alert=True)
-        return
+    from config import WEBAPP_URL
+    from aiogram.types import WebAppInfo
+    kb = InlineKeyboardBuilder()
+    kb.button(
+        text=_tt(lang, "📲 Открыть мини апп", "📲 Open app"),
+        web_app=WebAppInfo(url=WEBAPP_URL)
+    )
     await call.answer()
-    try:
-        exp = datetime.fromisoformat((cfg.get("expires_at") or "").replace("Z", ""))
-    except Exception:
-        exp = datetime.utcnow()
-    await _send_config(call.message, cfg, exp, 1, 1, lang)
+    await call.message.answer(
+        _tt(lang,
+            "📁 Твой конфиг доступен в приложении 👇",
+            "📁 Your config is available in the app 👇"),
+        reply_markup=kb.as_markup()
+    )
 
 
 @router.message(Command("myconfigs"))
