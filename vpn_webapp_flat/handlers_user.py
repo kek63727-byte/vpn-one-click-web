@@ -482,12 +482,6 @@ async def cb_subactloc(call: CallbackQuery, bot: Bot):
     except Exception:
         exp_dt = datetime.utcnow()
 
-    await _send_config(call.message, cfg, exp_dt, 1, 1, lang)
-
-    if (cfg.get("config_type") or "wireguard") == "wireguard":
-        await call.message.answer(_tt(lang, "📖 Как подключить — выбери платформу:",
-                                      "📖 How to connect — choose a platform:"), reply_markup=howto_kb(lang))
-
 
 # ============ FAQ ============
 
@@ -914,17 +908,7 @@ async def cb_trialloc(call: CallbackQuery, bot: Bot):
     )
 
     full = await db.get_config(cfg["id"])
-    await _send_config(call.message, full, expires, 1, 1, lang)
 
-    if (full.get("config_type") or "wireguard") == "wireguard":
-        await call.message.answer(
-            _tt(
-                lang,
-                "📖 Как подключить — выбери платформу:",
-                "📖 How to connect — choose a platform:"
-            ),
-            reply_markup=howto_kb(lang)
-        )
 
     # уведомляем админов: кто и где взял пробный доступ
     from datetime import datetime
@@ -1947,35 +1931,23 @@ async def _fulfill(target: Message, user_id: int, order: dict, bot: Bot, paid_mo
 
         return
 
-    if lang == "en":
-        await target.answer(
-            f"🎉 <b>Done!</b> Sending your {'config' if total == 1 else f'{total} configs'} 👇"
-        )
-    else:
-        await target.answer(
-            f"🎉 <b>Готово!</b> Высылаю {'конфиг' if total == 1 else f'{total} конфига'} 👇"
-        )
-
-    any_wg = False
-
     for idx, cid in enumerate(config_ids, start=1):
         expires = await db.mark_sold(cid, user_id, order["plan"], order["period"])
-        cfg = await db.get_config(cid)
 
-        if (cfg.get("config_type") or "wireguard") == "wireguard":
-            any_wg = True
-
-        await _send_config(target, cfg, expires, idx, total, lang)
-
-    if any_wg:
-        await target.answer(
-            _tt(
-                lang,
-                "📖 Как подключить — выбери платформу:",
-                "📖 How to connect — choose a platform:"
-            ),
-            reply_markup=howto_kb(lang)
-        )
+    from config import WEBAPP_URL
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import WebAppInfo
+    kb = InlineKeyboardBuilder()
+    kb.button(
+        text=_tt(lang, "📲 Открыть мини апп", "📲 Open app"),
+        web_app=WebAppInfo(url=WEBAPP_URL)
+    )
+    await target.answer(
+        _tt(lang,
+            "✅ <b>Готово!</b> Твой конфиг доступен в приложении 👇",
+            "✅ <b>Done!</b> Your config is available in the app 👇"),
+        reply_markup=kb.as_markup()
+    )
 
     if order.get("period") == "trial":
         await db.mark_trial_used(user_id)
@@ -2488,10 +2460,16 @@ async def _do_replace(call: CallbackQuery, bot: Bot, config_id: int, region: str
         exp = datetime.fromisoformat(new["expires_at"]) if new.get("expires_at") else db.now()
     except (ValueError, TypeError):
         exp = db.now()
-    await _edit(call, _tt(lang, "✅ <b>Конфиг заменён!</b> Срок действия сохранён.",
-                          "✅ <b>Config replaced!</b> Your expiry date is kept."),
-                back_to_menu_kb(lang))
-    await _send_config(call.message, new, exp, 1, 1, lang)
+    from config import WEBAPP_URL
+    from aiogram.types import WebAppInfo
+    kb = InlineKeyboardBuilder()
+    kb.button(
+        text=_tt(lang, "📲 Открыть мини апп", "📲 Open app"),
+        web_app=WebAppInfo(url=WEBAPP_URL)
+    )
+    await _edit(call, _tt(lang, "✅ <b>Конфиг заменён!</b> Открой приложение 👇",
+                          "✅ <b>Config replaced!</b> Open the app 👇"),
+                kb.as_markup())
 
     # пинг админу: какой аккаунт-источник дал плохой конфиг
     src = new.get("old_source") or "не указан"
