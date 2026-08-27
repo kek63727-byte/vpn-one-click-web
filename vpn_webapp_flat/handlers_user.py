@@ -29,7 +29,7 @@ from keyboards import (
     back_to_menu_kb, balance_kb, captcha_kb, chanbonus_kb, connection_kb, devices_kb, flag,
     gift_amounts_kb, guide_back_kb, howto_kb, language_kb, locations_kb, main_menu_kb, periods_kb,
     plans_kb, prime_buy_kb, prime_locations_kb, profile_kb, referral_kb, renew_kb, replace_country_kb,
-    replace_reasons_kb, reply_menu_kb, REPLY_LABELS, support_kb, sub_activate_kb,
+    replace_reasons_kb, support_kb, sub_activate_kb,
     sub_activate_locations_kb, sub_buy_kb, topup_amounts_kb,
     topup_methods_kb, trial_locations_kb, trial_promo_locations_kb,
 )
@@ -220,7 +220,6 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot):
         return
 
     await message.answer(texts.welcome(lang), reply_markup=main_menu_kb(lang))
-    await _ensure_reply_menu(message, lang)
 
 _CAPTCHA_EMOJIS = ["🐶", "🐱", "🦊", "🐰", "🐼", "🐨", "🦁", "🐸", "🐵", "🦄"]
 
@@ -251,63 +250,6 @@ async def cb_captcha_ok(call: CallbackQuery, bot: Bot):
         pass
     await call.message.answer(texts.choose_language(), reply_markup=language_kb())
     await call.answer("✅")
-
-
-async def _ensure_reply_menu(message: Message, lang: str):
-    """Показывает постоянную нижнюю клавиатуру (быстрое меню над полем ввода)."""
-    try:
-        await message.answer(_tt(lang, "📌 Быстрое меню снизу 👇", "📌 Quick menu below 👇"),
-                             reply_markup=reply_menu_kb(lang))
-    except Exception:
-        pass
-
-
-# текст кнопки нижнего меню → действие (RU и EN)
-_REPLY_TEXT2KEY = {}
-for _k, (_ru, _en) in REPLY_LABELS.items():
-    _REPLY_TEXT2KEY[_ru] = _k
-    _REPLY_TEXT2KEY[_en] = _k
-
-
-# кэш file_id стикеров — в модуле stickers.py
-
-
-@router.message(StateFilter(None), F.text.in_(set(_REPLY_TEXT2KEY)))
-async def reply_menu_router(message: Message, bot: Bot):
-    """Обрабатывает нажатия нижней (reply) клавиатуры — только когда нет активного ввода."""
-    lang = await _lang(message.from_user.id)
-    key = _REPLY_TEXT2KEY.get(message.text)
-    if key == "hide":
-        await message.answer(
-            _tt(lang, "Меню скрыто. Открыть снова — /menu или кнопкой ⌨️ справа.",
-                "Menu hidden. Reopen with /menu or the ⌨️ icon."),
-            reply_markup=ReplyKeyboardRemove())
-        return
-    await stickers.send_for(bot, message.chat.id, key)
-    rate = await _rate(lang)
-    uid = message.from_user.id
-    if key == "buy":
-        await message.answer(_tt(lang, "🛒 <b>Выбери тариф:</b>", "🛒 <b>Choose a plan:</b>"),
-                             reply_markup=plans_kb(lang, rate))
-    elif key == "my":
-        await _show_my(message, uid, lang)
-    elif key == "profile":
-        u = await db.user_card(uid)
-        if u:
-            pct = loyalty_percent_for(u.get("spent", 0))
-            nxt = _next_tier(u.get("spent", 0))
-            await message.answer(texts.profile(u, pct, nxt, lang, rate),
-                                 reply_markup=profile_kb(bool(u.get("autopay")), lang))
-    elif key == "prime":
-        if PRIME_ENABLED:
-            price = price_rub(PRIME_PLAN, PRIME_DEVICES, PRIME_PERIOD)
-            await message.answer(texts.prime_card(price, PRIME_DEVICES, PRIME_PERIOD, lang, rate),
-                                 reply_markup=prime_buy_kb(texts.money(price, lang, rate),
-                                                           PRIME_PLAN, PRIME_DEVICES, PRIME_PERIOD, lang))
-    elif key == "support":
-        await message.answer(texts.support(lang), reply_markup=support_kb(lang))
-    elif key == "menu":
-        await message.answer(texts.welcome(lang), reply_markup=main_menu_kb(lang))
 
 
 @router.message(Command("stickertest"))
@@ -355,7 +297,6 @@ async def cmd_menu_command(message: Message):
     await db.add_user(message.from_user.id, message.from_user.username, message.from_user.full_name)
     lang = await _lang(message.from_user.id)
     await message.answer(texts.welcome(lang), reply_markup=main_menu_kb(lang))
-    await _ensure_reply_menu(message, lang)
 
 
 @router.message(Command("help"))
@@ -377,7 +318,6 @@ async def cb_setlang(call: CallbackQuery):
     await db.set_lang(call.from_user.id, lang)
     lang = await _lang(call.from_user.id)
     await call.message.edit_text(texts.welcome(lang), reply_markup=main_menu_kb(lang))
-    await _ensure_reply_menu(call.message, lang)
     await call.answer("✅ English" if lang == "en" else "✅ Русский")
 
 
