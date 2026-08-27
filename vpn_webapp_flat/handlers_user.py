@@ -1921,7 +1921,6 @@ async def _fulfill(target: Message, user_id: int, order: dict, bot: Bot, paid_mo
             texts.sub_created(order["devices"], lang),
             reply_markup=main_menu_kb(lang)
         )
-        await _show_my(target, user_id, lang)
 
         if paid_money:
             if order.get("promo"):
@@ -1962,8 +1961,6 @@ async def _fulfill(target: Message, user_id: int, order: dict, bot: Bot, paid_mo
                 f"🎁 <b>{applied}</b> bonus days added to your subscription!"
             )
         )
-
-    await _show_my(target, user_id, lang)
 
     if paid_money:
         if order.get("promo"):
