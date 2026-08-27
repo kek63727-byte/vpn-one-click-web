@@ -55,7 +55,7 @@ def main_menu_kb(lang="ru"):
     kb.button(text=_t(lang, "👥 Пригласить друга", "👥 Invite a friend"), callback_data="ref")
     kb.button(text=_t(lang, "🧾 Мои платежи", "🧾 My payments"), callback_data="history")
     kb.button(text=_t(lang, f"🎁 +{CHANNEL_BONUS_DAYS} дня за подписку", f"🎁 +{CHANNEL_BONUS_DAYS} days for sub"), callback_data="chanbonus")
-    kb.button(text=_t(lang, "⚡️ Оплата СБП", "⚡️ SBP Payment"), callback_data="webapp_pay")
+    kb.button(text=_t(lang, "💬 Поддержка", "💬 Support"), callback_data="support")
     kb.button(text=_t(lang, "📖 Как подключиться", "📖 How to connect"), callback_data="howto")
     kb.button(text=_t(lang, "❓ FAQ", "❓ FAQ"), callback_data="faq")
     kb.button(text=_t(lang, "📰 Новости", "📰 News"), url=NEWS_CHANNEL_URL)
