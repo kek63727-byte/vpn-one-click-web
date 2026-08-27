@@ -36,39 +36,6 @@ def _t(lang, ru, en):
     return en if lang == "en" else ru
 
 
-# Подписи нижнего (reply) меню. Ключ → (RU, EN). Используются и клавиатурой, и хендлерами.
-REPLY_LABELS = {
-    "buy":     ("🌐 Купить подписку", "🌐 Buy subscription"),
-    "my":      ("📁 Мои подключения", "📁 My connections"),
-    "profile": ("👤 Профиль", "👤 Profile"),
-    "prime":   ("👑 Prime подписка", "👑 Prime subscription"),
-    "support": ("💬 Поддержка", "💬 Support"),
-    "menu":    ("🏠 Меню", "🏠 Menu"),
-    "hide":    ("✖️ Скрыть меню", "✖️ Hide menu"),
-}
-
-
-def reply_menu_kb(lang="ru"):
-    """Нижняя клавиатура (над полем ввода). Сворачивается после нажатия, открывается иконкой."""
-    from config import PRIME_ENABLED
-    kb = ReplyKeyboardBuilder()
-    kb.button(text=_t(lang, *REPLY_LABELS["buy"]))
-    kb.button(text=_t(lang, *REPLY_LABELS["my"]))
-    kb.button(text=_t(lang, *REPLY_LABELS["profile"]))
-    if PRIME_ENABLED:
-        kb.button(text=_t(lang, *REPLY_LABELS["prime"]))
-    kb.button(text=_t(lang, *REPLY_LABELS["support"]))
-    if WEBAPP_URL:
-        kb.button(text=_t(lang, "🌐 Открыть приложение", "🌐 Open app"), web_app=WebAppInfo(url=WEBAPP_URL))
-    kb.button(text=_t(lang, *REPLY_LABELS["menu"]))
-    kb.button(text=_t(lang, *REPLY_LABELS["hide"]))
-    if PRIME_ENABLED:
-        kb.adjust(1, 2, 2, 2)
-    else:
-        kb.adjust(1, 2, 2, 1)
-    return kb.as_markup(resize_keyboard=True, one_time_keyboard=True)
-
-
 def language_kb():
     kb = InlineKeyboardBuilder()
     kb.button(text="🇷🇺 Русский", callback_data="setlang:ru")
