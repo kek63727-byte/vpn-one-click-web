@@ -1960,6 +1960,33 @@ async def replace_config(old_id, target_region, reason) -> dict | None:
         new["plan"] = old["plan"]
         return new
 
+async def get_user_payments(user_id: int, limit: int = 50) -> list[dict]:
+    """История транзакций для мини-аппа: пополнения + покупки тарифов."""
+    items = await pay_history(user_id, limit=limit)
+    result = []
+    for p in items:
+        if p["kind"] == "topup":
+            result.append({
+                "title": "Пополнение баланса",
+                "amount": p["amount"],
+                "status": "paid",
+                "date": (p["at"] or "")[:16].replace("T", " "),
+            })
+        elif p["kind"] == "order":
+            parts = []
+            if p.get("plan"):
+                parts.append(p["plan"].capitalize())
+            if p.get("period"):
+                parts.append(p["period"])
+            if p.get("region"):
+                parts.append(p["region"])
+            result.append({
+                "title": " · ".join(parts) if parts else "Покупка тарифа",
+                "amount": p["amount"],
+                "status": p.get("status", "paid"),
+                "date": (p["at"] or "")[:16].replace("T", " "),
+            })
+    return result
 
 async def low_stock_regions(threshold) -> list[dict]:
     """Регионы, которые мы реально держим (есть записи в configs) со свободным остатком < threshold,
