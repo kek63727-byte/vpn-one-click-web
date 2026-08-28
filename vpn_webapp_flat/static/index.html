@@ -2111,10 +2111,18 @@ function renderRegions() {
   const wrap = document.getElementById('regionsScroll');
   const premiumOk = CONFIG.plans[selTariff].premiumAccess;
   const available = CONFIG.regions.filter(([, premium]) => premiumOk || !premium);
-  if (!selRegion || !available.some(([name]) => name === selRegion)) {
-    selRegion = available[0] ? available[0][0] : null;
+
+  // Если выбранный ранее регион больше не подходит тарифу — сбрасываем на «Авто»
+  if (selRegion && !available.some(([name]) => name === selRegion)) {
+    selRegion = null;
   }
-  wrap.innerHTML = CONFIG.regions.map(([name, premium]) => {
+
+  const autoChip = `
+    <div class="region-chip ${selRegion === null ? 'active' : ''}" onclick="selectRegion(null)">
+      <svg class="icon"><use href="#i-zap"/></svg>Авто
+    </div>`;
+
+  wrap.innerHTML = autoChip + CONFIG.regions.map(([name, premium]) => {
     const locked = premium && !premiumOk;
     const active = name === selRegion;
     return `<div class="region-chip ${active ? 'active' : ''} ${locked ? 'locked' : ''}"
@@ -2238,10 +2246,6 @@ let pendingOrder = null;
 async function handlePay() {
   if (!tg?.initData) {
     showToast('Открой мини-апп через бот');
-    return;
-  }
-  if (!selRegion) {
-    showToast('Выбери регион!');
     return;
   }
 
