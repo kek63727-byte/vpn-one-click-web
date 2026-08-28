@@ -937,10 +937,10 @@
       <div class="quick-icon ic-indigo"><svg class="icon" style="width:18px;height:18px;"><use href="#i-user-plus"/></svg></div>
       <div><div class="quick-title">Пригласить друга</div><div class="quick-sub">Реферальная программа</div></div>
     </div>
-    <div class="quick-item" onclick="openBotCommand('payments')">
-      <div class="quick-icon ic-cyan"><svg class="icon" style="width:18px;height:18px;"><use href="#i-receipt"/></svg></div>
-      <div><div class="quick-title">Мои платежи</div><div class="quick-sub">История транзакций</div></div>
-    </div>
+<div class="quick-item" onclick="showPaymentsModal()">
+  <div class="quick-icon ic-cyan"><svg class="icon" style="width:18px;height:18px;"><use href="#i-receipt"/></svg></div>
+  <div><div class="quick-title">Мои платежи</div><div class="quick-sub">История транзакций</div></div>
+</div>
     <div class="quick-item" onclick="showTopupModal()">
       <div class="quick-icon ic-orange"><svg class="icon" style="width:18px;height:18px;"><use href="#i-zap"/></svg></div>
       <div><div class="quick-title">Оплата СБП</div><div class="quick-sub">Быстрое пополнение</div></div>
@@ -1140,6 +1140,28 @@
 </div>
 
 <div class="toast" id="toast"></div>
+
+<!-- PAYMENTS MODAL -->
+<div class="modal-overlay" id="paymentsModal">
+  <div class="modal-sheet report-modal-sheet" style="padding-bottom:calc(env(safe-area-inset-bottom) + 20px);">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+      <div style="width:36px;height:36px;border-radius:10px;background:rgba(34,211,238,0.14);color:var(--cyan);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg class="icon" style="width:18px;height:18px;"><use href="#i-receipt"/></svg>
+      </div>
+      <div class="modal-title" style="margin:0;">Мои платежи</div>
+    </div>
+
+    <div id="paymentsList" style="display:flex;flex-direction:column;gap:8px;min-height:80px;"></div>
+    <div id="paymentsEmpty" style="display:none;text-align:center;padding:24px 0;color:var(--muted);font-size:13px;">
+      Пока нет ни одной транзакции
+    </div>
+    <div id="paymentsLoading" style="text-align:center;padding:24px 0;color:var(--muted);font-size:13px;">
+      Загружаем историю…
+    </div>
+
+    <button class="modal-cancel" onclick="hidePaymentsModal()">Закрыть</button>
+  </div>
+</div>
 
 <!-- SPECIAL OFFER MODAL -->
 <div class="offer-overlay" id="offerOverlay">
@@ -1747,6 +1769,64 @@ function showConfigModal(title) {
 
 function hideConfigModal() {
   document.getElementById('configModal').classList.remove('show');
+}
+
+function hideConfigModal() {
+  document.getElementById('configModal').classList.remove('show');
+}
+
+// ══════════════════════ МОИ ПЛАТЕЖИ ══════════════════════
+async function showPaymentsModal() {
+  document.getElementById('paymentsModal').classList.add('show');
+  document.getElementById('paymentsList').innerHTML = '';
+  document.getElementById('paymentsEmpty').style.display = 'none';
+  document.getElementById('paymentsLoading').style.display = '';
+  tg?.HapticFeedback?.impactOccurred('light');
+
+  if (!tg?.initData) {
+    document.getElementById('paymentsLoading').style.display = 'none';
+    showToast('Открой мини-апп через бот');
+    return;
+  }
+
+  try {
+    const resp = await fetch('/my_payments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ init_data: tg.initData }),
+    });
+    const data = await resp.json();
+    document.getElementById('paymentsLoading').style.display = 'none';
+
+    const items = data.payments || [];
+    if (!items.length) {
+      document.getElementById('paymentsEmpty').style.display = '';
+      return;
+    }
+
+    document.getElementById('paymentsList').innerHTML = items.map(p => {
+      const statusColor = p.status === 'paid' ? 'var(--green)' : (p.status === 'pending' ? 'var(--orange)' : 'var(--red)');
+      const statusText = p.status === 'paid' ? 'оплачено' : (p.status === 'pending' ? 'в ожидании' : 'отменено');
+      return `
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;">
+          <div style="min-width:0;">
+            <div style="font-size:13px;font-weight:700;">${p.title || 'Платёж'}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:2px;font-family:var(--mono);">${p.date || ''}</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;">
+            <div style="font-size:14px;font-weight:800;font-family:var(--mono);">${p.amount} ₽</div>
+            <div style="font-size:10px;font-weight:700;color:${statusColor};margin-top:2px;">${statusText}</div>
+          </div>
+        </div>`;
+    }).join('');
+  } catch (err) {
+    document.getElementById('paymentsLoading').style.display = 'none';
+    showToast('❌ Не удалось загрузить платежи');
+  }
+}
+
+function hidePaymentsModal() {
+  document.getElementById('paymentsModal').classList.remove('show');
 }
 
 async function downloadConfigFile() {
