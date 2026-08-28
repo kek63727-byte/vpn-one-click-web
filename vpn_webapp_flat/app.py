@@ -411,6 +411,14 @@ async def api_create_payment(request):
     if offer_applied:
         await db.mark_webapp_offer_used(user_id)
 
+    await db.set_order_status(order_id, "paid")
+    await db.log_event(user_id, "order_paid", amount=to_pay,
+                        meta={"plan": plan, "devices": devices, "period": period,
+                              "region": region, "order_id": order_id,
+                              "full_rub": full, "discount": discount,
+                              "offer_applied": offer_applied},
+                        source="webapp")
+
     new_balance = await db.get_balance(user_id)
     return web.json_response({"paid": True, "order_id": order_id, "balance": new_balance})
 
@@ -498,9 +506,13 @@ async def webhook_lava(request: web.Request):
         lang = await db.get_lang(order["user_id"])
         await handlers_user._fulfill(_TargetShim(order["user_id"]), order["user_id"], order, bot,
                                       paid_money=True, lang=lang, source="webhook")
+        await db.set_order_status(order["id"], "paid")
+        await db.log_event(order["user_id"], "order_paid", amount=order["rub"],
+                            meta={"plan": order.get("plan"), "devices": order.get("devices"),
+                                  "period": order.get("period"), "region": order.get("region"),
+                                  "order_id": order["id"]},
+                            source="webhook")
         log.info("lava webhook: order %s fulfilled for user %s", entity_id, order["user_id"])
-    else:
-        log.warning("lava webhook: неизвестный kind=%r из orderId=%r", kind, order_id_raw)
 
     return web.json_response({"ok": True})
 
