@@ -759,6 +759,14 @@ async def api_report_config(request):
     await _notify_admin_report(report_id, auth, cfg, reason, comment)
     return web.json_response({"ok": True, "report_id": report_id})
 
+@routes.post("/my_payments")
+async def api_my_payments(request):
+    auth = await _auth(request)
+    if not auth:
+        return web.json_response({"error": "bad_init_data"}, status=401)
+    user_id = auth["user_id"]
+    rows = await db.get_user_payments(user_id, limit=50)
+    return web.json_response({"payments": rows})
 
 async def _notify_admin_report(report_id, auth, cfg, reason, comment):
     from aiogram.utils.keyboard import InlineKeyboardBuilder
