@@ -299,13 +299,16 @@ async def api_me(request):
     })
 
 
-def _pick_region(plan: str) -> tuple[str, bool] | None:
-    """Fallback: берём первый подходящий регион из каталога."""
+async def _pick_region(plan: str) -> tuple[str, bool] | None:
+    """Автовыбор региона («Авто» в мини-аппе): берём первый по каталогу
+    регион нужного уровня доступа, в котором реально есть свободные конфиги."""
     premium_ok = PLANS[plan]["premium_access"]
+    free_by_region = await db.free_counts_by_region()
     for region, is_premium in store.CATALOG:
         if is_premium and not premium_ok:
             continue
-        return region, is_premium
+        if free_by_region.get(region, 0) > 0:
+            return region, is_premium
     return None
 
 
@@ -335,7 +338,7 @@ async def api_create_payment(request):
         return web.json_response({"error": "bad_plan"}, status=400)
 
     if not region:
-        picked = _pick_region(plan)
+        picked = await _pick_region(plan)
         if not picked:
             return web.json_response({"error": "no_region"}, status=400)
         region, _ = picked
