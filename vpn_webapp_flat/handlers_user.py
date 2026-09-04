@@ -996,8 +996,8 @@ async def cb_trialpromoloc(call: CallbackQuery, bot: Bot):
             f"✨ <b>3-day trial</b>\n{texts.LINE}\n"
             f"📍 {texts.region_name(region, lang)}\n💰 To pay: <b>{PROMO_TRIAL_PRICE} ₽</b>")
     )
-    await _offer_payment(call.message, bot, call.from_user.id, order_id, lang)
-
+    order = await db.get_order(order_id)
+    await _do_payment(call.message, bot, call.from_user.id, order, "sbp", lang)
 # ============ БАЛАНС ============
 
 @router.callback_query(F.data == "balance")
