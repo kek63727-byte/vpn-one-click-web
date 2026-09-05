@@ -68,7 +68,7 @@ PROMO = {
     "enabled": True,               # True — акция включена, False — выключена
     "plan": "ultimate",            # standard / premium / ultimate
     "period": "year",              # month / 3month / 6month / year
-    "prices": {"1": 199, "2": 379, "4": 699},  # цены по числу устройств
+    "prices": {"4": 799},
 }
 # ══════════════════════════════════════════════════════════════
 
