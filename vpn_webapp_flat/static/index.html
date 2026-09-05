@@ -652,6 +652,37 @@
     background: none; border: none; line-height: 1; padding: 2px 4px;
   }
   .recruit-banner-close:hover { color: #a89fc4; }
+
+    .promo-info-btn {
+    position: absolute; top: 14px; right: 14px; z-index: 3;
+    width: 25px; height: 25px; border-radius: 50%;
+    background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.30);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; cursor: pointer;
+    transition: background .15s, transform .12s, border-color .15s;
+  }
+  .promo-info-btn:active { transform: scale(0.9); }
+  .promo-info-btn.active { background: rgba(255,255,255,0.30); border-color: rgba(255,255,255,0.5); }
+
+  .promo-info-tooltip {
+    position: absolute; top: 46px; right: 14px; z-index: 4;
+    width: 216px; max-width: calc(100% - 28px);
+    background: #1c1330; border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 14px; padding: 12px 14px;
+    box-shadow: 0 16px 36px -10px rgba(0,0,0,0.6);
+    opacity: 0; transform: translateY(-6px) scale(0.96);
+    pointer-events: none; transition: opacity .18s ease, transform .18s ease;
+  }
+  .promo-info-tooltip.show { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+  .promo-info-tooltip-arrow {
+    position: absolute; top: -6px; right: 16px; width: 11px; height: 11px;
+    background: #1c1330; border-left: 1px solid rgba(255,255,255,0.14);
+    border-top: 1px solid rgba(255,255,255,0.14); transform: rotate(45deg);
+  }
+  .promo-info-tooltip-text {
+    position: relative; font-size: 12px; line-height: 1.5; color: #e9e3ff;
+  }
+  .promo-info-tooltip-text b { color: #fde68a; font-weight: 700; }
 </style>
 
 </head>
@@ -732,11 +763,26 @@
       <span class="pill gold" onclick="handleTrial()"><svg class="icon" style="width:12px;height:12px;"><use href="#i-gift"/></svg>3 дня бесплатно</span>
     </div>
 
-    <div class="promo-banner-block" id="promoBannerBlock" style="margin:20px 16px 0;display:none;">
+  <div class="promo-banner-block" id="promoBannerBlock" style="margin:20px 16px 0;display:none;">
       <div style="position:relative;background:linear-gradient(135deg,#3b1272 0%,#7c3aed 60%,#b794ff 100%);
                   border-radius:20px;padding:20px;overflow:hidden;box-shadow:0 14px 40px -16px rgba(124,58,237,0.55);">
         <div style="position:absolute;right:-30px;top:-30px;width:150px;height:150px;
                     background:radial-gradient(circle, rgba(255,255,255,0.18), transparent 70%);"></div>
+
+        <div class="promo-info-btn" id="promoInfoBtn" onclick="togglePromoInfo(event)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;">
+            <circle cx="12" cy="12" r="9"/>
+            <path d="M12 8h.01"/>
+            <path d="M11 11.5h1v4.5"/>
+          </svg>
+        </div>
+        <div class="promo-info-tooltip" id="promoInfoTooltip">
+          <div class="promo-info-tooltip-arrow"></div>
+          <div class="promo-info-tooltip-text" id="promoInfoTooltipText">
+            Выдаём <b>случайные серверы</b> из разных стран — по одному на каждое устройство.
+          </div>
+        </div>
+
         <div style="position:relative;">
           <div style="display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;
                       font-family:var(--mono);letter-spacing:1px;text-transform:uppercase;color:#fde68a;
@@ -2270,9 +2316,9 @@ function renderPromoBanner() {
 
   const p = promoStatus.prices || {};
   const opts = document.getElementById('promoBannerOpts');
-  opts.innerHTML = [1, 2, 4].map(d => {
+  const availableDevices = [1, 2, 4].filter(d => p[String(d)]);
+  opts.innerHTML = availableDevices.map(d => {
     const price = p[String(d)];
-  if (!price) return '';
     return `
       <div class="promo-opt" onclick="selectPromoYear(${d})"
            style="flex:1;text-align:center;background:rgba(255,255,255,0.14);border-radius:12px;padding:10px 4px;cursor:pointer;">
@@ -2281,8 +2327,35 @@ function renderPromoBanner() {
       </div>`;
   }).join('');
 
+  const tipText = document.getElementById('promoInfoTooltipText');
+  if (tipText) {
+    const maxDevices = availableDevices.length ? Math.max(...availableDevices) : 4;
+    tipText.innerHTML = `Выдаём <b>${maxDevices} случайных сервера</b> из разных стран — по одному на каждое устройство. Страну заранее выбрать нельзя.`;
+  }
+
   el.style.display = '';
 }
+
+function togglePromoInfo(e) {
+  e.stopPropagation();
+  const tip = document.getElementById('promoInfoTooltip');
+  const btn = document.getElementById('promoInfoBtn');
+  if (!tip || !btn) return;
+  const show = !tip.classList.contains('show');
+  tip.classList.toggle('show', show);
+  btn.classList.toggle('active', show);
+  tg?.HapticFeedback?.impactOccurred('light');
+}
+
+document.addEventListener('click', (e) => {
+  const tip = document.getElementById('promoInfoTooltip');
+  const btn = document.getElementById('promoInfoBtn');
+  if (!tip || !btn) return;
+  if (tip.classList.contains('show') && !tip.contains(e.target) && !btn.contains(e.target)) {
+    tip.classList.remove('show');
+    btn.classList.remove('active');
+  }
+});
 
 function selectPromoYear(devices) {
   // ← ДОБАВЬ проверку что план существует
