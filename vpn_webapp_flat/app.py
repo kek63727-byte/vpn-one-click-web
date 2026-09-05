@@ -355,14 +355,17 @@ async def api_create_payment(request):
     # Сначала проверяем отдельную акцию (не трогает обычные тарифы) —
     # если она активна и подходит под этот план/период/устройства, берём её цену.
     promo_price = store.get_promo_price(plan, devices, period)
-    full = promo_price if promo_price is not None else pay.price_rub(plan, devices, period)
+    is_promo = promo_price is not None
+    full = promo_price if is_promo else pay.price_rub(plan, devices, period)
     spent = await db.total_spent(user_id)
     loyalty_discount = full * pay.loyalty_percent_for(spent) // 100
 
     # Приветственная/возвратная скидка мини-аппа — право на неё перепроверяем
     # на сервере, клиентскому флагу не доверяем (иначе любой мог бы прислать
     # use_special_offer=true и получить скидку без права на неё).
-    use_offer = bool(body.get("use_special_offer"))
+    # На акционную цену (store.PROMO) эта скидка НЕ распространяется —
+    # акция уже даёт минимальную цену сама по себе.
+    use_offer = bool(body.get("use_special_offer")) and not is_promo
     offer_applied = False
     if use_offer and await db.webapp_offer_eligible(user_id):
         offer_discount = full * 50 // 100
