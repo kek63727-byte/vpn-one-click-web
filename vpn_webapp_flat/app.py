@@ -183,6 +183,12 @@ async def api_prices(request):
     resp.headers["Pragma"] = "no-cache"
     return resp
 
+@routes.get("/promo_status")
+async def api_promo_status(request):
+    """Публичный статус акции — для рендера баннера в мини-аппе, без авторизации."""
+    resp = web.json_response(store.get_promo_public())
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return resp
 
 @routes.get("/sub/{config_id}/{token}")
 async def sub_link(request):
@@ -345,8 +351,11 @@ async def api_create_payment(request):
     elif store.is_premium_region(region) and not PLANS[plan]["premium_access"]:
         return web.json_response({"error": "region_locked"}, status=400)
 
-    # Цена считается ТОЛЬКО на сервере
-    full = pay.price_rub(plan, devices, period)
+    # Цена считается ТОЛЬКО на сервере.
+    # Сначала проверяем отдельную акцию (не трогает обычные тарифы) —
+    # если она активна и подходит под этот план/период/устройства, берём её цену.
+    promo_price = store.get_promo_price(plan, devices, period)
+    full = promo_price if promo_price is not None else pay.price_rub(plan, devices, period)
     spent = await db.total_spent(user_id)
     loyalty_discount = full * pay.loyalty_percent_for(spent) // 100
 
@@ -816,6 +825,28 @@ async def api_admin_stats(request):
         "stock_delta": None,
         "stock_alert": bool(low_stock),
     })
+
+@routes.post("/admin/promo_year")
+async def api_admin_promo_get(request):
+    auth = await _auth(request)
+    if not auth or auth["user_id"] not in ADMIN_IDS:
+        return web.json_response({"error": "forbidden"}, status=403)
+    return web.json_response(store.PROMO)
+
+
+@routes.post("/admin/promo_year/set")
+async def api_admin_promo_set(request):
+    auth = await _auth(request)
+    if not auth or auth["user_id"] not in ADMIN_IDS:
+        return web.json_response({"error": "forbidden"}, status=403)
+    body = request["_body"]
+    store.set_promo(
+        enabled=body.get("enabled"),
+        plan=body.get("plan"),
+        period=body.get("period"),
+        prices=body.get("prices"),
+    )
+    return web.json_response({"ok": True, "promo": store.PROMO})
 
 @routes.post("/freeze_config")
 async def api_freeze_config(request):
