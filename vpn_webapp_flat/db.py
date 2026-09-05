@@ -1,927 +1,1013 @@
-"""Слой БД (SQLite): конфиги, пользователи, заказы, рефералы, запасы, триал-пул."""
-
-from datetime import datetime, timedelta, timezone
-
-import aiosqlite
-import json
-
-from config import DB_PATH, DEFAULT_REGION_CATALOG, LOW_STOCK_THRESHOLD, ORDER_TTL_MIN, PERIOD_DAYS
-
-
-def now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def iso(dt: datetime) -> str:
-    return dt.isoformat()
-
-
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS configs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    region TEXT NOT NULL,
-    config_text TEXT NOT NULL,
-    is_premium INTEGER NOT NULL DEFAULT 0,
-    is_trial INTEGER NOT NULL DEFAULT 0,
-    status TEXT NOT NULL DEFAULT 'free',
-    config_type TEXT NOT NULL DEFAULT 'wireguard',
-    user_id INTEGER, plan TEXT, period TEXT,
-    created_at TEXT NOT NULL, reserved_at TEXT, sold_at TEXT, expires_at TEXT
-);
-
-CREATE TABLE IF NOT EXISTS users (
-    user_id INTEGER PRIMARY KEY,
-    username TEXT, full_name TEXT,
-    referred_by INTEGER,
-    trial_used INTEGER NOT NULL DEFAULT 0,
-    bonus_days INTEGER NOT NULL DEFAULT 0,
-    ref_earned INTEGER NOT NULL DEFAULT 0,
-    ref_balance_rub INTEGER NOT NULL DEFAULT 0,
-    ref_earned_rub INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS orders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER, plan TEXT, devices INTEGER, period TEXT,
-    region TEXT, config_ids TEXT,
-    full_rub INTEGER, discount INTEGER, rub INTEGER,
-    status TEXT, created_at TEXT
-);
-
-CREATE TABLE IF NOT EXISTS payments (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER, order_id INTEGER, amount INTEGER,
-    currency TEXT, charge_id TEXT, created_at TEXT
-);
-
-CREATE TABLE IF NOT EXISTS region_state (
-    region TEXT PRIMARY KEY,
-    low_notified INTEGER NOT NULL DEFAULT 0,
-    empty_notified INTEGER NOT NULL DEFAULT 0
-);
-
-CREATE TABLE IF NOT EXISTS promo_codes (
-    code TEXT PRIMARY KEY,
-    kind TEXT NOT NULL DEFAULT 'discount',
-    percent INTEGER NOT NULL DEFAULT 0,
-    amount_rub INTEGER NOT NULL DEFAULT 0,
-    max_uses INTEGER NOT NULL DEFAULT 0,
-    used INTEGER NOT NULL DEFAULT 0,
-    active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT
-);
-
-CREATE TABLE IF NOT EXISTS topups (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER, amount_rub INTEGER, method TEXT,
-    status TEXT NOT NULL DEFAULT 'pending', invoice_ref TEXT, created_at TEXT
-);
-
-CREATE TABLE IF NOT EXISTS preorders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER, plan TEXT, devices INTEGER, period TEXT, region TEXT,
-    full_rub INTEGER, discount INTEGER, rub INTEGER, promo TEXT,
-    status TEXT NOT NULL DEFAULT 'waiting', lang TEXT DEFAULT 'ru', created_at TEXT
-);
-
-CREATE TABLE IF NOT EXISTS subscriptions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER, plan TEXT, devices INTEGER, period TEXT,
-    expires_at TEXT, status TEXT NOT NULL DEFAULT 'active', created_at TEXT
-);
-
-CREATE TABLE IF NOT EXISTS region_change_requests (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER, config_id INTEGER, from_region TEXT,
-    status TEXT NOT NULL DEFAULT 'pending', created_at TEXT
-);
-
-CREATE TABLE IF NOT EXISTS promo_redemptions (
-    code TEXT NOT NULL,
-    user_id INTEGER NOT NULL,
-    created_at TEXT,
-    PRIMARY KEY (code, user_id)
-);
-
-CREATE TABLE IF NOT EXISTS settings_prices (
-    plan TEXT NOT NULL,
-    devices INTEGER NOT NULL,
-    period TEXT NOT NULL,
-    rub INTEGER NOT NULL,
-    PRIMARY KEY (plan, devices, period)
-);
-
-CREATE TABLE IF NOT EXISTS region_catalog (
-    region TEXT PRIMARY KEY,
-    is_premium INTEGER NOT NULL DEFAULT 0,
-    position INTEGER NOT NULL DEFAULT 0
-);
-
-CREATE TABLE IF NOT EXISTS restock_orders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    region TEXT NOT NULL,
-    need INTEGER NOT NULL DEFAULT 0,
-    amount_rub INTEGER,
-    pay_url TEXT,
-    status TEXT NOT NULL DEFAULT 'new',
-    added INTEGER NOT NULL DEFAULT 0,
-    urgent INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT,
-    updated_at TEXT
-);
-
-CREATE TABLE IF NOT EXISTS replacements (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    old_id INTEGER, new_id INTEGER,
-    region TEXT, reason TEXT, old_source TEXT,
-    created_at TEXT
-);
-
-CREATE TABLE IF NOT EXISTS payout_requests (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    amount_rub INTEGER NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending',
-    created_at TEXT,
-    updated_at TEXT
-);
-
-CREATE TABLE IF NOT EXISTS config_reports (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    config_id INTEGER NOT NULL,
-    region TEXT NOT NULL,
-    reason TEXT NOT NULL,
-    comment TEXT DEFAULT '',
-    status TEXT NOT NULL DEFAULT 'new',
-    created_at TEXT NOT NULL,
-    resolved_at TEXT
-);
-
-CREATE TABLE IF NOT EXISTS events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    kind TEXT NOT NULL,
-    amount INTEGER,
-    meta TEXT,
-    source TEXT,
-    created_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_events_user ON events(user_id);
-CREATE INDEX IF NOT EXISTS idx_events_kind ON events(kind);
-
-CREATE INDEX IF NOT EXISTS idx_configs_rs ON configs(region, status);
-"""
-
-
-async def _ensure_column(db, table, col, ddl):
-    cur = await db.execute(f"PRAGMA table_info({table})")
-    cols = [r[1] for r in await cur.fetchall()]
-    if col not in cols:
-        await db.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
-
-
-async def init_db():
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.executescript(SCHEMA)
-        for col, ddl in [
-            ("is_premium", "is_premium INTEGER NOT NULL DEFAULT 0"),
-            ("is_trial", "is_trial INTEGER NOT NULL DEFAULT 0"),
-            ("plan", "plan TEXT"), ("period", "period TEXT"),
-        ]:
-            await _ensure_column(db, "configs", col, ddl)
-        for col, ddl in [          # ← 8 スペースに修正
-            ("referred_by", "referred_by INTEGER"),
-            ("trial_used", "trial_used INTEGER NOT NULL DEFAULT 0"),
-            ("bonus_days", "bonus_days INTEGER NOT NULL DEFAULT 0"),
-            ("ref_earned", "ref_earned INTEGER NOT NULL DEFAULT 0"),
-            ("ref_balance_rub", "ref_balance_rub INTEGER NOT NULL DEFAULT 0"),
-            ("ref_earned_rub", "ref_earned_rub INTEGER NOT NULL DEFAULT 0"),
-            ("lang", "lang TEXT NOT NULL DEFAULT 'ru'"),
-            ("balance_rub", "balance_rub INTEGER NOT NULL DEFAULT 0"),
-            ("banned", "banned INTEGER NOT NULL DEFAULT 0"),
-            ("autopay", "autopay INTEGER NOT NULL DEFAULT 0"),
-            ("ref_cash_rub", "ref_cash_rub INTEGER NOT NULL DEFAULT 0"),
-            ("ref_milestone", "ref_milestone INTEGER NOT NULL DEFAULT 0"),
-            ("ab_exp", "ab_exp TEXT"),
-            ("ab_variant", "ab_variant TEXT"),
-            ("verified", "verified INTEGER NOT NULL DEFAULT 0"),
-            ("channel_bonus_claimed", "channel_bonus_claimed INTEGER NOT NULL DEFAULT 0"),
-            ("trial_reminded", "trial_reminded INTEGER NOT NULL DEFAULT 0"),
-            ("webapp_offer_used", "webapp_offer_used INTEGER NOT NULL DEFAULT 0"),
-        ]:
-            await _ensure_column(db, "users", col, ddl)
-        for col, ddl in [
-            ("full_rub", "full_rub INTEGER"), ("discount", "discount INTEGER"),
-            ("promo", "promo TEXT"),
-        ]:
-            await _ensure_column(db, "orders", col, ddl)
-        await _ensure_column(db, "configs", "renew_notified", "renew_notified INTEGER NOT NULL DEFAULT 0")
-        await _ensure_column(db, "configs", "source", "source TEXT")
-        await _ensure_column(db, "configs", "winback_notified", "winback_notified INTEGER NOT NULL DEFAULT 0")
-        await _ensure_column(db, "configs", "lowbal_notified", "lowbal_notified INTEGER NOT NULL DEFAULT 0")
-        await _ensure_column(db, "configs", "frozen_at", "frozen_at TEXT")
-        await _ensure_column(db, "configs", "sub_id", "sub_id INTEGER")
-        await _ensure_column(db, "configs", "config_type", "config_type TEXT NOT NULL DEFAULT 'wireguard'")
-        for col, ddl in [
-            ("kind", "kind TEXT NOT NULL DEFAULT 'discount'"),
-            ("amount_rub", "amount_rub INTEGER NOT NULL DEFAULT 0"),
-            ("is_gift", "is_gift INTEGER NOT NULL DEFAULT 0"),
-        ]:
-            await _ensure_column(db, "promo_codes", col, ddl)
-        # сидируем каталог регионов значениями по умолчанию (только если пусто)
-        cur = await db.execute("SELECT COUNT(*) FROM region_catalog")
-        if (await cur.fetchone())[0] == 0:
-            for pos, (region, prem) in enumerate(DEFAULT_REGION_CATALOG):
-                await db.execute(
-                    "INSERT OR IGNORE INTO region_catalog(region, is_premium, position) VALUES(?,?,?)",
-                    (region, 1 if prem else 0, pos),
-                )
-        await db.commit()
-
-
-# ---------- пользователи / рефералы ----------
-
-async def add_user(user_id, username, full_name) -> bool:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT 1 FROM users WHERE user_id=?", (user_id,))
-        exists = await cur.fetchone() is not None
-        await db.execute(
-            "INSERT INTO users(user_id, username, full_name, created_at) VALUES(?,?,?,?) "
-            "ON CONFLICT(user_id) DO UPDATE SET username=excluded.username, "
-            "full_name=excluded.full_name",
-            (user_id, username, full_name, iso(now())),
-        )
-        await db.commit()
-        return not exists
-
-
-async def get_user(user_id) -> dict | None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
-        row = await cur.fetchone()
-        return dict(row) if row else None
-
-
-async def set_referrer(user_id, referrer_id):
-    if user_id == referrer_id:
-        return
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE users SET referred_by=? WHERE user_id=? AND referred_by IS NULL",
-            (referrer_id, user_id),
-        )
-        await db.commit()
-
-
-async def referral_stats(user_id) -> dict:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT COUNT(*) FROM users WHERE referred_by=?", (user_id,))
-        invited = (await cur.fetchone())[0]
-    u = await get_user(user_id) or {}
-    return {
-        "invited": invited,
-        "earned_days": u.get("ref_earned", 0),
-        "earned_rub": u.get("ref_earned_rub", 0),
-        "balance_days": u.get("bonus_days", 0),
-        "balance_rub": u.get("ref_balance_rub", 0),
-        "cash_rub": u.get("ref_cash_rub", 0),
-    }
-
-
-async def mark_trial_used(user_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE users SET trial_used=1 WHERE user_id=?", (user_id,))
-        await db.commit()
-
-
-async def get_lang(user_id) -> str:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT lang FROM users WHERE user_id=?", (user_id,))
-        row = await cur.fetchone()
-        return (row[0] if row and row[0] else "ru")
-
-
-async def set_lang(user_id, lang):
-    if lang not in ("ru", "en"):
-        lang = "ru"
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE users SET lang=? WHERE user_id=?", (lang, user_id))
-        await db.commit()
-
-
-async def add_bonus_days(user_id, days):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE users SET bonus_days=bonus_days+?, ref_earned=ref_earned+? WHERE user_id=?",
-            (days, days, user_id),
-        )
-        await db.commit()
-
-
-async def add_ref_balance(user_id, rub):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE users SET ref_balance_rub=ref_balance_rub+?, "
-            "ref_earned_rub=ref_earned_rub+? WHERE user_id=?",
-            (rub, rub, user_id),
-        )
-        await db.commit()
-
-
-async def use_ref_balance(user_id, rub):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE users SET ref_balance_rub=MAX(0, ref_balance_rub-?) WHERE user_id=?",
-            (rub, user_id),
-        )
-        await db.commit()
-
-
-# ---------- реферальный кошелёк (выводимый реальными деньгами) ----------
-
-async def add_ref_cash(user_id, rub):
-    """Начисляет реферальный кэш (выводимый) и инкрементит lifetime-заработок."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE users SET ref_cash_rub=ref_cash_rub+?, ref_earned_rub=ref_earned_rub+? "
-            "WHERE user_id=?",
-            (rub, rub, user_id),
-        )
-        await db.commit()
-
-
-async def get_ref_cash(user_id) -> int:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT ref_cash_rub FROM users WHERE user_id=?", (user_id,))
-        row = await cur.fetchone()
-        return row[0] if row and row[0] else 0
-
-
-async def get_ref_milestone(user_id) -> int:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT ref_milestone FROM users WHERE user_id=?", (user_id,))
-        row = await cur.fetchone()
-        return row[0] if row and row[0] else 0
-
-
-async def set_ref_milestone(user_id, value):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE users SET ref_milestone=? WHERE user_id=?", (value, user_id))
-        await db.commit()
-
-
-# ---------- заявки на вывод реферального баланса ----------
-
-async def create_payout(user_id, amount) -> int | None:
-    """Создаёт заявку на вывод и «холдит» сумму (списывает с реф-кэша). None — если не хватает."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT ref_cash_rub FROM users WHERE user_id=?", (user_id,))
-        row = await cur.fetchone()
-        have = (row[0] if row and row[0] else 0)
-        if amount <= 0 or have < amount:
+"""Хендлеры пользователя (RU/EN): язык, меню, покупка, триал, рефералка, оплата."""
+
+import logging
+
+import texts
+from aiogram import Bot, F, Router
+from aiogram.filters import Command, CommandObject, CommandStart, StateFilter
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import BufferedInputFile, CallbackQuery, Message, PreCheckoutQuery, ReplyKeyboardRemove
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+import html as _html
+from datetime import datetime
+
+import db
+import ab
+import stickers
+from config import (
+    ADMIN_IDS, DEVICE_TITLE, PAYMENT_MODE, PERIOD_TITLE, PERIOD_DAYS, PLANS, REF_PERCENT,
+    REF_REWARD_DAYS, SALES_LOG_CHAT_ID, TRIAL_DAYS, LOYALTY_TIERS,
+    REF_MILESTONES, REF_MIN_PAYOUT, FREEZE_PRICE, FREEZE_DAYS, FREEZE_COOLDOWN_DAYS,
+    WINBACK_PROMO_PERCENT, WINBACK_PROMO_DAYS, SUPPORT_USERNAME,
+    PRIME_ENABLED, PRIME_PLAN, PRIME_DEVICES, PRIME_PERIOD,
+    STICKER_SET, CAPTCHA_ENABLED, BONUS_CHANNEL_ID, CHANNEL_BONUS_DAYS,
+    TRIAL_REMINDER_PROMO_PERCENT, TRIAL_REMINDER_PROMO_DAYS, SWITCH_DISCOUNT_PERCENT,
+    NEWS_CHANNEL_URL, PROMO_TRIAL_PRICE,
+)
+from keyboards import (
+    back_to_menu_kb, balance_kb, captcha_kb, chanbonus_kb, connection_kb, devices_kb, flag,
+    gift_amounts_kb, guide_back_kb, howto_kb, language_kb, locations_kb, main_menu_kb, periods_kb,
+    plans_kb, prime_buy_kb, prime_locations_kb, profile_kb, referral_kb, renew_kb, replace_country_kb,
+    replace_reasons_kb, support_kb, sub_activate_kb,
+    sub_activate_locations_kb, sub_buy_kb, topup_amounts_kb,
+    topup_methods_kb, trial_locations_kb, trial_promo_locations_kb,
+)
+from payments import (
+    check_crypto_invoice, check_lava_invoice, create_crypto_invoice,
+    create_lava_invoice, get_usd_rub_rate, invoice_params, loyalty_percent_for, price_rub,
+    topup_bonus_for,
+)
+from utils import make_qr_png
+from config import TOPUP_PRESETS
+
+router = Router()
+log = logging.getLogger(__name__)
+
+
+class PromoUser(StatesGroup):
+    waiting = State()
+
+
+class TopupCustom(StatesGroup):
+    waiting = State()
+
+
+class Ticket(StatesGroup):
+    waiting = State()
+
+
+def _tt(lang, ru, en):
+    return en if lang == "en" else ru
+
+
+async def _lang(user_id) -> str:
+    return await db.get_lang(user_id)
+
+
+async def _ensure_admin_commands(bot: Bot, admin_id: int):
+    """Проставляет команду /admin персонально админу (на случай, если он
+    впервые открыл бота уже после запуска процесса)."""
+    try:
+        from aiogram.types import BotCommand, BotCommandScopeChat
+        cmds = [
+            BotCommand(command="start", description="Запустить / Start"),
+            BotCommand(command="menu", description="Главное меню / Menu"),
+            BotCommand(command="help", description="Помощь / Help"),
+            BotCommand(command="admin", description="Панель управления (админ)"),
+        ]
+        await bot.set_my_commands(cmds, scope=BotCommandScopeChat(chat_id=admin_id))
+    except Exception:
+        pass
+
+
+async def _rate(lang) -> float | None:
+    """Курс USD только для английской версии (для показа цен в $)."""
+    if lang == "en":
+        try:
+            return await get_usd_rub_rate()
+        except Exception:
             return None
-        await db.execute("UPDATE users SET ref_cash_rub=ref_cash_rub-? WHERE user_id=?",
-                         (amount, user_id))
-        cur = await db.execute(
-            "INSERT INTO payout_requests(user_id, amount_rub, status, created_at, updated_at) "
-            "VALUES(?,?, 'pending', ?, ?)",
-            (user_id, amount, iso(now()), iso(now())),
-        )
-        await db.commit()
-        return cur.lastrowid
+    return None
 
 
-async def get_payout(pid):
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM payout_requests WHERE id=?", (pid,))
-        row = await cur.fetchone()
-        return dict(row) if row else None
+async def _loyalty_pct(user_id) -> int:
+    spent = await db.total_spent(user_id)
+    return loyalty_percent_for(spent)
 
 
-async def has_pending_payout(user_id) -> bool:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "SELECT 1 FROM payout_requests WHERE user_id=? AND status='pending' LIMIT 1", (user_id,))
-        return (await cur.fetchone()) is not None
+def _next_tier(spent: int):
+    """Следующий невыполненный уровень лояльности (порог, %) или None."""
+    for threshold, percent in LOYALTY_TIERS:
+        if spent < threshold:
+            return (threshold, percent)
+    return None
 
 
-async def set_payout_status(pid, status, refund=False):
-    """Меняет статус заявки. refund=True — вернуть сумму на реф-кэш (при отклонении)."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT user_id, amount_rub, status FROM payout_requests WHERE id=?", (pid,))
-        row = await cur.fetchone()
-        if not row:
+async def _resolve_discount(user_id, full, promo_code, promo_percent, floor_percent=0):
+    """Скидка для заказа. Лояльность/промо/переключение НЕ суммируются — берём бОльшую.
+    floor_percent — минимальная скидка (например, 15% за переключение тарифа).
+    Возвращает (disc_rub, promo_code_to_consume, eff_percent)."""
+    loy = await _loyalty_pct(user_id)
+    base = max(loy, floor_percent or 0)
+    if promo_percent and promo_percent >= base:
+        return full * promo_percent // 100, promo_code, promo_percent
+    return full * base // 100, None, base
+
+
+def _switch_floor(data: dict, plan: str) -> int:
+    """15% за переключение, если выбран тариф, отличный от активного."""
+    return SWITCH_DISCOUNT_PERCENT if data and data.get("switch_plan") == plan else 0
+
+
+async def _consume_promo(code, user_id):
+    if not code:
+        return
+    await db.use_promo(code)
+    await db.record_promo_redemption(code, user_id)
+
+
+async def _notify_admins(bot: Bot, text: str, reply_markup=None):
+    """Шлёт уведомление всем админам + в лог-канал (если задан в .env)."""
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot.send_message(admin_id, text, reply_markup=reply_markup)
+        except Exception:
+            pass
+    if SALES_LOG_CHAT_ID:
+        try:
+            await bot.send_message(SALES_LOG_CHAT_ID, text, reply_markup=reply_markup)
+        except Exception:
+            pass
+
+
+async def _admin_preorder_alert(bot: Bot, user_id, region, plan, devices, period, rub, po_id=None):
+    """Собирает карточку клиента (имя, @username, баланс, время) и шлёт админам
+    вместе с кнопками управления (написать / выдать / отменить / бан)."""
+    from datetime import datetime
+    u = await db.get_user(user_id) or {}
+    bal = await db.get_balance(user_id)
+    when = datetime.now().strftime("%d.%m %H:%M")
+    text = texts.admin_preorder_alert(
+        region, plan, devices, period, rub, user_id,
+        username=u.get("username"), full_name=u.get("full_name"),
+        balance=bal, when=when,
+    )
+    kb = InlineKeyboardBuilder()
+    if po_id is not None:
+        kb.button(text="🚚 Выдать", callback_data=f"apo:deliver:{po_id}")
+        kb.button(text="❌ Отменить (возврат)", callback_data=f"apo:cancel:{po_id}")
+    kb.button(text="✉️ Написать", callback_data=f"amsg:{user_id}")
+    kb.button(text="👤 Карточка", callback_data=f"acard:{user_id}")
+    kb.button(text="⛔️ Бан", callback_data=f"au:ban:{user_id}")
+    kb.adjust(2, 2, 1)
+    await _notify_admins(bot, text, reply_markup=kb.as_markup())
+
+
+# ============ СТАРТ / ЯЗЫК / МЕНЮ ============
+
+@router.message(CommandStart())
+async def cmd_start(message: Message, command: CommandObject, bot: Bot):
+    is_new = await db.add_user(
+        message.from_user.id, message.from_user.username, message.from_user.full_name
+    )
+    # A/B: фиксируем вариант за пользователем (только если эксперимент включён)
+    exp = ab.active_experiment()
+    if exp:
+        try:
+            await db.set_user_ab(message.from_user.id, exp, ab.variant_for(message.from_user.id))
+        except Exception:
+            pass
+    # Если это админ — гарантируем, что у него в меню есть /admin
+    if message.from_user.id in ADMIN_IDS:
+        await _ensure_admin_commands(bot, message.from_user.id)
+    args = command.args or ""
+    if is_new and args.startswith("ref_"):
+        try:
+            await db.set_referrer(message.from_user.id, int(args[4:]))
+        except ValueError:
+            pass
+    # Капча (анти-бот): непроверенным не-админам показываем проверку перед входом
+    if (CAPTCHA_ENABLED and message.from_user.id not in ADMIN_IDS
+            and not await db.is_verified(message.from_user.id)):
+        target, opts = _make_captcha()
+        await message.answer(texts.captcha_q(target), reply_markup=captcha_kb(target, opts))
+        return
+    if is_new:
+        await message.answer(texts.choose_language(), reply_markup=language_kb())
+        return
+
+    lang = await _lang(message.from_user.id)
+    rate = await _rate(lang)
+
+    if args == "trialpromo":
+        user2 = await db.get_user(message.from_user.id)
+        if user2 and user2["trial_used"]:
+            await message.answer(texts.trial_used(lang), reply_markup=plans_kb(lang, rate))
             return
-        user_id, amount, cur_status = row
-        if refund and cur_status == "pending":
-            await db.execute("UPDATE users SET ref_cash_rub=ref_cash_rub+? WHERE user_id=?",
-                             (amount, user_id))
-        await db.execute("UPDATE payout_requests SET status=?, updated_at=? WHERE id=?",
-                         (status, iso(now()), pid))
-        await db.commit()
+        if not await _trial_sub_ok(bot, message.from_user.id):
+            await message.answer(texts.trial_need_sub(lang=lang), reply_markup=_trial_sub_kb(lang))
+            return
+        regions = await db.trial_regions()
+        if regions:
+            await message.answer(texts.trial_promo_intro(PROMO_TRIAL_PRICE, lang),
+                                 reply_markup=trial_promo_locations_kb(regions, lang))
+            return
+
+    if args == "buy":
+        await message.answer(_tt(lang, "🛒 <b>Выбери тариф:</b>", "🛒 <b>Choose a plan:</b>"),
+                             reply_markup=plans_kb(lang, rate))
+        return
+
+    await message.answer(texts.welcome(lang), reply_markup=main_menu_kb(lang))
+
+_CAPTCHA_EMOJIS = ["🐶", "🐱", "🦊", "🐰", "🐼", "🐨", "🦁", "🐸", "🐵", "🦄"]
 
 
-async def pending_payouts() -> list[dict]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute(
-            "SELECT * FROM payout_requests WHERE status='pending' ORDER BY created_at")
-        return [dict(r) for r in await cur.fetchall()]
+def _make_captcha():
+    import random
+    opts = random.sample(_CAPTCHA_EMOJIS, 4)
+    target = random.choice(opts)
+    return target, opts
 
 
-# ---------- история платежей клиента ----------
-
-async def pay_history(user_id, limit=20) -> list[dict]:
-    """Объединённая история: пополнения (оплаченные) + покупки подписок."""
-    items = []
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute(
-            "SELECT amount_rub, method, created_at FROM topups "
-            "WHERE user_id=? AND status='paid' ORDER BY created_at DESC LIMIT ?",
-            (user_id, limit),
-        )
-        for r in await cur.fetchall():
-            items.append({"kind": "topup", "amount": r["amount_rub"],
-                          "info": (r["method"] or "").upper(), "at": r["created_at"]})
-        cur = await db.execute(
-            "SELECT plan, period, region, rub, status, created_at FROM orders "
-            "WHERE user_id=? AND status IN ('paid','refunded') ORDER BY created_at DESC LIMIT ?",
-            (user_id, limit),
-        )
-        for r in await cur.fetchall():
-            items.append({"kind": "order", "amount": r["rub"], "plan": r["plan"],
-                          "period": r["period"], "region": r["region"],
-                          "status": r["status"], "at": r["created_at"]})
-    items.sort(key=lambda x: x["at"] or "", reverse=True)
-    return items[:limit]
+@router.callback_query(F.data == "capno")
+async def cb_captcha_wrong(call: CallbackQuery):
+    target, opts = _make_captcha()
+    try:
+        await call.message.edit_text(texts.captcha_wrong(), reply_markup=captcha_kb(target, opts))
+    except Exception:
+        pass
+    await call.answer("❌")
 
 
-# ---------- воронка возврата (win-back) ----------
-
-async def winback_candidates(after_days) -> list[dict]:
-    """Истёкшие N+ дней назад подписки у тех, кто НЕ переоформил, и кому ещё не слали возврат."""
-    cutoff = iso(now() - timedelta(days=after_days))
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute(
-            "SELECT c.id, c.user_id, c.region FROM configs c "
-            "WHERE c.status='expired' AND c.is_trial=0 AND c.winback_notified=0 "
-            "AND c.expires_at IS NOT NULL AND c.expires_at < ? "
-            "AND NOT EXISTS (SELECT 1 FROM configs s WHERE s.user_id=c.user_id "
-            "                AND s.status='sold' AND s.is_trial=0) "
-            "AND (SELECT banned FROM users u WHERE u.user_id=c.user_id)=0",
-            (cutoff,),
-        )
-        return [dict(r) for r in await cur.fetchall()]
+@router.callback_query(F.data == "capok")
+async def cb_captcha_ok(call: CallbackQuery, bot: Bot):
+    await db.set_verified(call.from_user.id)
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+    await call.message.answer(texts.choose_language(), reply_markup=language_kb())
+    await call.answer("✅")
 
 
-async def mark_winback(config_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE configs SET winback_notified=1 WHERE id=?", (config_id,))
-        await db.commit()
+@router.message(Command("stickertest"))
+async def cmd_stickertest(message: Message, bot: Bot):
+    """Диагностика стикеров + показывает твой ID и статус админа (для настройки ADMIN_IDS)."""
+    uid = message.from_user.id
+    is_admin = uid in ADMIN_IDS
+    head = (f"🆔 Твой ID: <code>{uid}</code>\n"
+            f"👮 Админ: {'да ✅' if is_admin else 'нет ❌ — впиши этот ID в ADMIN_IDS в .env и перезапусти'}\n"
+            f"🎟 STICKER_SET: <code>{STICKER_SET or '(пусто)'}</code>")
+    await message.answer(head)
+    if not STICKER_SET:
+        await message.answer("⚠️ STICKER_SET пуст — добавь <code>STICKER_SET=Scream</code> в .env и перезапусти.")
+        return
+    try:
+        ss = await bot.get_sticker_set(STICKER_SET)
+        await message.answer(f"✅ Пак <b>{STICKER_SET}</b>: стикеров {len(ss.stickers)}. Отправляю первый…")
+        await bot.send_sticker(message.chat.id, ss.stickers[0].file_id)
+    except Exception as e:
+        await message.answer(f"❌ Не удалось получить пак <b>{STICKER_SET}</b>:\n<code>{e}</code>\n\n"
+                             "Проверь, что имя пака верное (часть после t.me/addstickers/).")
 
 
-# ---------- A/B эксперименты ----------
-
-async def set_user_ab(user_id, exp, variant):
-    """Фиксирует вариант эксперимента за пользователем (только если ещё не задан)."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE users SET ab_exp=?, ab_variant=? "
-            "WHERE user_id=? AND (ab_exp IS NULL OR ab_exp='')",
-            (exp, variant, user_id),
-        )
-        await db.commit()
-
-
-async def ab_report(exp) -> list[dict]:
-    """По вариантам активного эксперимента: пользователей, взяли триал, оплатили, конверсия."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute(
-            "SELECT u.ab_variant variant, COUNT(*) users, "
-            "SUM(CASE WHEN u.trial_used=1 THEN 1 ELSE 0 END) trials, "
-            "SUM(CASE WHEN EXISTS(SELECT 1 FROM orders o "
-            "      WHERE o.user_id=u.user_id AND o.status='paid') THEN 1 ELSE 0 END) paid "
-            "FROM users u WHERE u.ab_exp=? AND u.ab_variant IS NOT NULL "
-            "GROUP BY u.ab_variant ORDER BY u.ab_variant",
-            (exp,),
-        )
-        return [dict(r) for r in await cur.fetchall()]
-
-
-# ---------- заморозка подписки ----------
-
-async def can_freeze(config_id, cooldown_days) -> tuple[bool, str | None]:
-    """Можно ли заморозить (с учётом кулдауна). Возвращает (можно, дата_след_заморозки)."""
-    if cooldown_days <= 0:
-        return True, None
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT frozen_at FROM configs WHERE id=?", (config_id,))
-        row = await cur.fetchone()
-        if not row or not row["frozen_at"]:
-            return True, None
+@router.message(Command("stickers"))
+async def cmd_stickers(message: Message, bot: Bot):
+    """Показывает все стикеры пака с номерами — чтобы настроить STICKER_MAP (только админ)."""
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    ids = await stickers.all_ids(bot)
+    if not ids:
+        await message.answer("Пак не загружен. Проверь STICKER_SET в .env и перезапусти бота.")
+        return
+    await message.answer(f"🎟 В паке <b>{len(ids)}</b> стикеров. Номер под каждым — это значение "
+                         f"для STICKER_MAP в config.py:")
+    for i, fid in enumerate(ids[:60], 1):
         try:
-            last = datetime.fromisoformat(row["frozen_at"])
-        except (ValueError, TypeError):
-            return True, None
-        nxt = last + timedelta(days=cooldown_days)
-        if now() >= nxt:
-            return True, None
-        return False, iso(nxt)
-
-
-async def mark_frozen(config_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE configs SET frozen_at=? WHERE id=?", (iso(now()), config_id))
-        await db.commit()
-
-
-async def mark_lowbal_notified(config_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE configs SET lowbal_notified=1 WHERE id=?", (config_id,))
-        await db.commit()
-
-
-async def lowbal_autopay_candidates(before_days) -> list[dict]:
-    """Подписки на автопродлении, которые скоро спишутся, но ещё не предупреждены о нехватке."""
-    n = now()
-    upper = iso(n + timedelta(days=before_days))
-    lower = iso(n)
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute(
-            "SELECT c.* FROM configs c JOIN users u ON u.user_id = c.user_id "
-            "WHERE c.status='sold' AND c.is_trial=0 AND u.autopay=1 AND u.banned=0 "
-            "AND c.lowbal_notified=0 AND c.renew_notified=0 "
-            "AND c.expires_at IS NOT NULL AND c.expires_at > ? AND c.expires_at <= ?",
-            (lower, upper),
-        )
-        return [dict(r) for r in await cur.fetchall()]
-
-
-async def apply_bonus(user_id) -> tuple[int, str | None]:
-    u = await get_user(user_id)
-    if not u or u["bonus_days"] <= 0:
-        return 0, None
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute(
-            "SELECT * FROM configs WHERE user_id=? AND status='sold' "
-            "ORDER BY expires_at DESC LIMIT 1", (user_id,),
-        )
-        cfg = await cur.fetchone()
-        if not cfg:
-            return 0, None
-        days = u["bonus_days"]
-        base = now()
-        try:
-            exp = datetime.fromisoformat(cfg["expires_at"])
-            if exp > base:
-                base = exp
-        except (ValueError, TypeError):
+            await bot.send_sticker(message.chat.id, fid)
+            await message.answer(f"№{i}")
+        except Exception:
             pass
-        new_exp = base + timedelta(days=days)
-        await db.execute("UPDATE configs SET expires_at=? WHERE id=?", (iso(new_exp), cfg["id"]))
-        await db.execute("UPDATE users SET bonus_days=0 WHERE user_id=?", (user_id,))
-        await db.commit()
-        return days, cfg["region"]
 
 
-async def all_user_ids():
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT user_id FROM users")
-        return [r[0] for r in await cur.fetchall()]
+@router.message(Command("menu"))
+async def cmd_menu_command(message: Message):
+    await db.add_user(message.from_user.id, message.from_user.username, message.from_user.full_name)
+    lang = await _lang(message.from_user.id)
+    await message.answer(texts.welcome(lang), reply_markup=main_menu_kb(lang))
 
 
-# ---------- капча / верификация ----------
-async def is_verified(user_id) -> bool:
-    u = await get_user(user_id)
-    return bool(u and u.get("verified"))
+@router.message(Command("help"))
+async def cmd_help_command(message: Message):
+    await db.add_user(message.from_user.id, message.from_user.username, message.from_user.full_name)
+    lang = await _lang(message.from_user.id)
+    await message.answer(texts.support(lang), reply_markup=back_to_menu_kb(lang))
 
 
-async def set_verified(user_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE users SET verified=1 WHERE user_id=?", (user_id,))
-        await db.commit()
+@router.callback_query(F.data == "lang")
+async def cb_lang(call: CallbackQuery):
+    await call.message.edit_text(texts.choose_language(), reply_markup=language_kb())
+    await call.answer()
 
 
-# ---------- бонус за подписку на канал ----------
-async def extend_active_sub(user_id, days) -> tuple[int, str | None, str | None]:
-    """Продлевает последнюю активную подписку (sold) на days дней.
-    Возвращает (days, region, new_expiry_iso) либо (0, None, None), если активной нет."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute(
-            "SELECT * FROM configs WHERE user_id=? AND status='sold' "
-            "ORDER BY expires_at DESC LIMIT 1", (user_id,))
-        cfg = await cur.fetchone()
-        if not cfg:
-            return 0, None, None
-        base = now()
+@router.callback_query(F.data.startswith("setlang:"))
+async def cb_setlang(call: CallbackQuery):
+    lang = call.data.split(":", 1)[1]
+    await db.set_lang(call.from_user.id, lang)
+    lang = await _lang(call.from_user.id)
+    await call.message.edit_text(texts.welcome(lang), reply_markup=main_menu_kb(lang))
+    await call.answer("✅ English" if lang == "en" else "✅ Русский")
+
+
+async def _edit(call: CallbackQuery, text, kb):
+    # Если на эту кнопку реально ушёл стикер — присылаем экран новым сообщением ВНИЗУ
+    # (под стикером), старое удаляем. Если стикера нет (кулдаун/не задан) — меняем на месте.
+    sent = False
+    if stickers.has(call.data):
         try:
-            exp = datetime.fromisoformat(cfg["expires_at"])
-            if exp > base:
-                base = exp
-        except (ValueError, TypeError):
-            pass
-        new_exp = base + timedelta(days=days)
-        await db.execute("UPDATE configs SET expires_at=? WHERE id=?", (iso(new_exp), cfg["id"]))
-        await db.commit()
-        return days, cfg["region"], iso(new_exp)
-
-
-async def channel_bonus_claimed(user_id) -> bool:
-    u = await get_user(user_id)
-    return bool(u and u.get("channel_bonus_claimed"))
-
-
-async def set_channel_bonus_claimed(user_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE users SET channel_bonus_claimed=1 WHERE user_id=?", (user_id,))
-        await db.commit()
-
-
-# ---------- напоминание после триала ----------
-async def trial_reminder_candidates(after_days: int) -> list[dict]:
-    """Кто активировал триал, но так и не купил, и прошло >= after_days дней."""
-    cut = iso(now() - timedelta(days=after_days))
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute(
-            "SELECT user_id, lang FROM users u "
-            "WHERE u.trial_used=1 AND u.banned=0 AND u.trial_reminded=0 "
-            "AND u.created_at <= ? "
-            "AND NOT EXISTS (SELECT 1 FROM configs c WHERE c.user_id=u.user_id "
-            "                AND c.is_trial=0 AND c.sold_at IS NOT NULL)",
-            (cut,))
-        return [dict(r) for r in await cur.fetchall()]
-
-
-async def mark_trial_reminded(user_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE users SET trial_reminded=1 WHERE user_id=?", (user_id,))
-        await db.commit()
-
-
-# ---------- дайджест ----------
-async def new_users_since(cut_iso: str) -> int:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT COUNT(*) FROM users WHERE created_at >= ?", (cut_iso,))
-        return (await cur.fetchone())[0]
-
-
-# ---------- конфиги ----------
-
-async def add_config(region, config_text, is_premium, is_trial, source=None) -> tuple[int, bool]:
-    """Добавляет конфиг. Невалидный WireGuard кладётся со статусом 'broken' (не продаётся).
-    Возвращает (id, is_valid)."""
-    from utils import is_valid_wg
-    valid = is_valid_wg(config_text)
-    status = "free" if valid else "broken"
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "INSERT INTO configs(region, config_text, is_premium, is_trial, status, config_type, source, created_at) "
-            "VALUES(?,?,?,?,?,'wireguard',?,?)",
-            (region, config_text, 1 if is_premium else 0, 1 if is_trial else 0, status, source, iso(now())),
-        )
-        await db.execute(
-            "INSERT INTO region_state(region, low_notified, empty_notified) VALUES(?,0,0) "
-            "ON CONFLICT(region) DO UPDATE SET low_notified=0, empty_notified=0",
-            (region,),
-        )
-        await db.commit()
-        return cur.lastrowid, valid
-
-
-# ---------- VLESS-конфиги (happ) ----------
-
-async def add_vless_config(region, config_text, source=None, is_trial=False) -> int:
-    """Добавляет один VLESS-конфиг (JSON для happ). Валидность проверяется до вызова
-    (в хендлере, через utils.is_valid_vless), поэтому здесь конфиг всегда кладётся 'free'.
-    is_trial=True — конфиг уходит в пробный пул (выдаётся только на триале). Возвращает id."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "INSERT INTO configs(region, config_text, is_premium, is_trial, status, config_type, source, created_at) "
-            "VALUES(?,?,0,?,'free','vless',?,?)",
-            (region, config_text, 1 if is_trial else 0, source, iso(now())),
-        )
-        await db.execute(
-            "INSERT INTO region_state(region, low_notified, empty_notified) VALUES(?,0,0) "
-            "ON CONFLICT(region) DO UPDATE SET low_notified=0, empty_notified=0",
-            (region,),
-        )
-        await db.commit()
-        return cur.lastrowid
-
-
-async def add_vless_configs_bulk(region, texts: list[str], source=None, is_trial=False) -> tuple[int, int]:
-    """Массовое добавление VLESS-конфигов. is_trial=True — в пробный пул.
-    Возвращает (добавлено, пропущено_пустых)."""
-    added = skipped = 0
-    async with aiosqlite.connect(DB_PATH) as db:
-        for t in texts:
-            t = (t or "").strip()
-            if not t:
-                skipped += 1
-                continue
-            await db.execute(
-                "INSERT INTO configs(region, config_text, is_premium, is_trial, status, config_type, source, created_at) "
-                "VALUES(?,?,0,?,'free','vless',?,?)",
-                (region, t, 1 if is_trial else 0, source, iso(now())),
-            )
-            added += 1
-        await db.execute(
-            "INSERT INTO region_state(region, low_notified, empty_notified) VALUES(?,0,0) "
-            "ON CONFLICT(region) DO UPDATE SET low_notified=0, empty_notified=0",
-            (region,),
-        )
-        await db.commit()
-    return added, skipped
-
-
-async def regions_overview(min_free):
-    """Платные регионы (без триал-конфигов). (region, is_premium, free)."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "SELECT region, MAX(is_premium) prem, "
-            "SUM(CASE WHEN status='free' AND is_trial=0 THEN 1 ELSE 0 END) free "
-            "FROM configs WHERE is_trial=0 GROUP BY region HAVING free >= ? ORDER BY prem, region",
-            (min_free,),
-        )
-        return [(r[0], r[1], r[2]) for r in await cur.fetchall()]
-
-
-async def free_counts_by_region() -> dict:
-    """{region: число свободных платных конфигов}."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "SELECT region, SUM(CASE WHEN status='free' AND is_trial=0 THEN 1 ELSE 0 END) free "
-            "FROM configs WHERE is_trial=0 GROUP BY region"
-        )
-        return {r[0]: (r[1] or 0) for r in await cur.fetchall()}
-
-
-async def regions_for_purchase():
-    """Каталог регионов (всегда показываются) + число свободных конфигов.
-    Регионы без конфигов остаются в списке — при выборе предложат предзаказ.
-    Возвращает [(region, is_premium, free), ...] в порядке каталога."""
-    import store
-    free = await free_counts_by_region()
-    catalog = list(store.CATALOG)
-    seen = {r for r, _ in catalog}
-    result = [(region, 1 if prem else 0, free.get(region, 0)) for region, prem in catalog]
-    # регионы, которых нет в каталоге, но есть конфиги — добавим в конец
-    for region, cnt in free.items():
-        if region not in seen:
-            result.append((region, 0, cnt))
-    return result
-
-
-async def load_catalog() -> list[tuple[str, bool]]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "SELECT region, is_premium FROM region_catalog ORDER BY position, region")
-        return [(r[0], bool(r[1])) for r in await cur.fetchall()]
-
-
-async def catalog_with_stock() -> list[dict]:
-    """Для админки: регион, premium, свободно, всего конфигов."""
-    free = await free_counts_by_region()
-    import store
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "SELECT region, COUNT(*) total FROM configs WHERE is_trial=0 GROUP BY region")
-        totals = {r[0]: r[1] for r in await cur.fetchall()}
-    out = []
-    for region, prem in store.CATALOG:
-        out.append({"region": region, "is_premium": prem,
-                    "free": free.get(region, 0), "total": totals.get(region, 0)})
-    return out
-
-
-async def catalog_add(region: str, is_premium: bool):
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM region_catalog")
-        pos = (await cur.fetchone())[0]
-        await db.execute(
-            "INSERT INTO region_catalog(region, is_premium, position) VALUES(?,?,?) "
-            "ON CONFLICT(region) DO UPDATE SET is_premium=excluded.is_premium",
-            (region, 1 if is_premium else 0, pos))
-        await db.commit()
-
-
-async def catalog_set_premium(region: str, is_premium: bool):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE region_catalog SET is_premium=? WHERE region=?",
-                         (1 if is_premium else 0, region))
-        # синхронизируем флаг и у существующих конфигов региона
-        await db.execute("UPDATE configs SET is_premium=? WHERE region=? AND is_trial=0",
-                         (1 if is_premium else 0, region))
-        await db.commit()
-
-
-async def catalog_remove(region: str):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("DELETE FROM region_catalog WHERE region=?", (region,))
-        await db.commit()
-
-
-async def catalog_rename(old: str, new: str):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE region_catalog SET region=? WHERE region=?", (new, old))
-        await db.execute("UPDATE configs SET region=? WHERE region=?", (new, old))
-        await db.execute("UPDATE region_state SET region=? WHERE region=?", (new, old))
-        await db.commit()
-
-
-# ---------- редактируемые цены ----------
-
-async def load_prices() -> list[tuple]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT plan, devices, period, rub FROM settings_prices")
-        return [(r[0], r[1], r[2], r[3]) for r in await cur.fetchall()]
-
-
-async def save_price(plan: str, devices: int, period: str, rub: int):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "INSERT INTO settings_prices(plan, devices, period, rub) VALUES(?,?,?,?) "
-            "ON CONFLICT(plan, devices, period) DO UPDATE SET rub=excluded.rub",
-            (plan, devices, period, rub))
-        await db.commit()
-
-
-async def regions_for_purchase_legacy():
-    """Старое поведение (только регионы с конфигами) — оставлено на всякий случай."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "SELECT region, MAX(is_premium) prem, "
-            "SUM(CASE WHEN status='free' AND is_trial=0 THEN 1 ELSE 0 END) free "
-            "FROM configs WHERE is_trial=0 GROUP BY region ORDER BY prem, region"
-        )
-        return [(r[0], r[1], r[2]) for r in await cur.fetchall()]
-
-
-async def trial_regions():
-    """Регионы пробного периода — ТОЛЬКО триал-пул. Платные серверы не трогаются."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "SELECT region, 0, SUM(CASE WHEN status='free' THEN 1 ELSE 0 END) free "
-            "FROM configs WHERE is_trial=1 GROUP BY region HAVING free >= 1 ORDER BY region"
-        )
-        return [(r[0], r[1], r[2]) for r in await cur.fetchall()]
-
-
-async def extend_active(user_id, days) -> tuple[bool, str | None]:
-    """Добавляет дни к самой свежей активной подписке пользователя."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute(
-            "SELECT * FROM configs WHERE user_id=? AND status='sold' "
-            "ORDER BY expires_at DESC LIMIT 1", (user_id,),
-        )
-        cfg = await cur.fetchone()
-        if not cfg:
-            return False, None
-        base = now()
+            sent = await stickers.send_for(call.bot, call.message.chat.id, call.data)
+        except Exception:
+            sent = False
+    if sent:
         try:
-            exp = datetime.fromisoformat(cfg["expires_at"])
-            if exp > base:
-                base = exp
-        except (ValueError, TypeError):
+            await call.message.delete()
+        except Exception:
             pass
-        new_exp = base + timedelta(days=days)
-        await db.execute("UPDATE configs SET expires_at=? WHERE id=?", (iso(new_exp), cfg["id"]))
-        await db.commit()
-        return True, cfg["region"]
+        await call.message.answer(text, reply_markup=kb, disable_web_page_preview=True)
+        return
+    try:
+        await call.message.edit_text(text, reply_markup=kb, disable_web_page_preview=True)
+    except Exception:
+        await call.message.answer(text, reply_markup=kb, disable_web_page_preview=True)
 
 
-async def reserve_purchase(region, n, user_id) -> list[dict] | None:
-    """Бронь платных (не триал) конфигов."""
-    return await _reserve(region, n, user_id, "AND is_trial=0", "id")
+@router.callback_query(F.data == "menu")
+async def cb_menu(call: CallbackQuery):
+    lang = await _lang(call.from_user.id)
+    await _edit(call, texts.welcome(lang), main_menu_kb(lang))
+    await call.answer()
 
 
-async def reserve_trial(region, user_id) -> list[dict] | None:
-    """Бронь 1 конфига для триала — строго из триал-пула."""
-    return await _reserve(region, 1, user_id, "AND is_trial=1", "id")
+@router.callback_query(F.data == "about")
+async def cb_about(call: CallbackQuery):
+    lang = await _lang(call.from_user.id)
+    await _edit(call, texts.about(lang), back_to_menu_kb(lang))
+    await call.answer()
 
 
-async def _reserve(region, n, user_id, extra_where, order_by):
+@router.callback_query(F.data == "support")
+async def cb_support(call: CallbackQuery):
+    lang = await _lang(call.from_user.id)
+    await _edit(call, texts.support(lang), support_kb(lang))
+    await call.answer()
+
+
+@router.callback_query(F.data == "rules")
+async def cb_rules(call: CallbackQuery):
+    lang = await _lang(call.from_user.id)
+    await _edit(call, texts.rules(lang), back_to_menu_kb(lang))
+    await call.answer()
+
+
+# ============ ОБРАЩЕНИЕ В ПОДДЕРЖКУ (тикет) ============
+
+@router.callback_query(F.data == "ticket")
+async def cb_ticket_start(call: CallbackQuery, state: FSMContext):
+    lang = await _lang(call.from_user.id)
+    await state.set_state(Ticket.waiting)
+    await call.message.answer(texts.support_ticket_ask(lang))
+    await call.answer()
+
+
+@router.message(Ticket.waiting, Command("cancel"))
+async def cb_ticket_cancel(message: Message, state: FSMContext):
+    lang = await _lang(message.from_user.id)
+    await state.clear()
+    await message.answer(_tt(lang, "Отменено.", "Cancelled."), reply_markup=back_to_menu_kb(lang))
+
+
+@router.message(Ticket.waiting, F.text)
+async def cb_ticket_send(message: Message, state: FSMContext, bot: Bot):
+    lang = await _lang(message.from_user.id)
+    await state.clear()
+    u = await db.get_user(message.from_user.id) or {}
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✉️ Ответить", callback_data=f"amsg:{message.from_user.id}")
+    kb.button(text="👤 Карточка", callback_data=f"acard:{message.from_user.id}")
+    kb.adjust(2)
+    await _notify_admins(bot, texts.admin_ticket(
+        message.from_user.id, message.text[:3500],
+        username=u.get("username"), full_name=u.get("full_name")),
+        reply_markup=kb.as_markup())
+    await message.answer(texts.support_ticket_sent(lang), reply_markup=back_to_menu_kb(lang))
+
+
+# ============ PRIME-ПОДПИСКА ============
+
+@router.callback_query(F.data == "prime")
+async def cb_prime(call: CallbackQuery):
+    lang = await _lang(call.from_user.id)
+    rate = await _rate(lang)
+    if not PRIME_ENABLED:
+        await call.answer()
+        return
+    price = price_rub(PRIME_PLAN, PRIME_DEVICES, PRIME_PERIOD)
+    await _edit(call, texts.prime_card(price, PRIME_DEVICES, PRIME_PERIOD, lang, rate),
+                prime_buy_kb(texts.money(price, lang, rate),
+                             PRIME_PLAN, PRIME_DEVICES, PRIME_PERIOD, lang))
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("primeloc:"))
+async def cb_prime_loc(call: CallbackQuery, bot: Bot, state: FSMContext):
+    # Prime = покупка ultimate / 5 устройств / год: переиспользуем обычный поток покупки
+    region = call.data.split(":", 1)[1]
+    await _buyloc(call, bot, state, PRIME_PLAN, PRIME_DEVICES, PRIME_PERIOD, region)
+
+
+@router.callback_query(F.data == "primeauto")
+async def cb_prime_auto(call: CallbackQuery, bot: Bot, state: FSMContext):
+    """Авто-подбор локации: где сразу хватает на бандл, иначе с максимальным запасом."""
+    regions = await db.regions_for_purchase()
+    if not regions:
+        await call.answer("Локации недоступны", show_alert=True)
+        return
+    ready = [r for r in regions if r[2] >= PRIME_DEVICES]
+    pool = ready if ready else regions
+    best = max(pool, key=lambda r: r[2])  # больше всего свободных
+    await _buyloc(call, bot, state, PRIME_PLAN, PRIME_DEVICES, PRIME_PERIOD, best[0])
+
+
+# ============ АКТИВАЦИЯ УСТРОЙСТВ (слот-подписка) ============
+
+@router.callback_query(F.data.startswith("subact:"))
+async def cb_subact(call: CallbackQuery):
+    lang = await _lang(call.from_user.id)
+    sub_id = int(call.data.split(":")[1])
+    sub = await db.get_subscription(sub_id)
+    if not sub or sub["user_id"] != call.from_user.id:
+        await call.answer(_tt(lang, "Подписка не найдена.", "Subscription not found."), show_alert=True)
+        return
+    subs = await db.user_subscriptions(call.from_user.id)
+    s = next((x for x in subs if x["id"] == sub_id), None)
+    if not s or s["free_slots"] <= 0:
+        await call.answer(_tt(lang, "Все устройства уже активированы.", "All devices already activated."), show_alert=True)
+        return
+    regions = await db.regions_for_purchase()
+    avail = [r for r in regions if r[2] >= 1]
+    if not avail:
+        await call.answer(_tt(lang, "Сейчас нет свободных серверов. Загляни чуть позже.",
+                              "No free servers right now. Check back later."), show_alert=True)
+        return
+    await _edit(call, texts.sub_activate_pick(s, lang), sub_activate_locations_kb(sub_id, avail, lang))
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("subactloc:"))
+async def cb_subactloc(call: CallbackQuery, bot: Bot):
+    lang = await _lang(call.from_user.id)
+    _, sub_id, region = call.data.split(":", 2)
+    cfg = await db.activate_slot(int(sub_id), region, call.from_user.id)
+    if not cfg:
+        await call.answer(_tt(lang, "Не удалось — нет места или сервера. Выбери другую страну.",
+                              "Couldn't activate — no slot or server. Try another country."), show_alert=True)
+        return
+    await call.answer("✅")
+    await call.message.answer(texts.sub_activated(texts.region_name(region, lang), lang))
+    from datetime import datetime
+    try:
+        exp_dt = datetime.fromisoformat((cfg.get("expires_at") or "").replace("Z", ""))
+    except Exception:
+        exp_dt = datetime.utcnow()
+
+
+# ============ FAQ ============
+
+@router.callback_query(F.data == "faq")
+async def cb_faq(call: CallbackQuery):
+    lang = await _lang(call.from_user.id)
+    await _edit(call, texts.faq(lang), back_to_menu_kb(lang))
+    await call.answer()
+
+
+# ============ ПРОФИЛЬ / ЛОЯЛЬНОСТЬ / АВТОПРОДЛЕНИЕ ============
+
+@router.callback_query(F.data == "profile")
+async def cb_profile(call: CallbackQuery):
+    lang = await _lang(call.from_user.id)
+    rate = await _rate(lang)
+    u = await db.user_card(call.from_user.id)
+    if not u:
+        await call.answer()
+        return
+    pct = loyalty_percent_for(u.get("spent", 0))
+    nxt = _next_tier(u.get("spent", 0))
+    await _edit(call, texts.profile(u, pct, nxt, lang, rate), profile_kb(bool(u.get("autopay")), lang))
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("autopay:"))
+async def cb_autopay(call: CallbackQuery):
+    lang = await _lang(call.from_user.id)
+    rate = await _rate(lang)
+    on = call.data.split(":", 1)[1] == "on"
+    await db.set_autopay(call.from_user.id, on)
+    await call.answer(_tt(lang, "Готово", "Done"))
+    msg = texts.autopay_on(lang) if on else texts.autopay_off(lang)
+    await call.message.answer(msg)
+    u = await db.user_card(call.from_user.id)
+    pct = loyalty_percent_for(u.get("spent", 0))
+    nxt = _next_tier(u.get("spent", 0))
+    await _edit(call, texts.profile(u, pct, nxt, lang, rate), profile_kb(on, lang))
+
+
+# ============ ПОДАРОЧНЫЕ КОДЫ ============
+
+@router.callback_query(F.data == "gift")
+async def cb_gift(call: CallbackQuery):
+    lang = await _lang(call.from_user.id)
+    rate = await _rate(lang)
+    await _edit(call, texts.gift_intro(lang), gift_amounts_kb(TOPUP_PRESETS, lang, rate))
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("giftamt:"))
+async def cb_gift_amount(call: CallbackQuery):
+    import secrets
+    lang = await _lang(call.from_user.id)
+    rate = await _rate(lang)
+    amount = int(call.data.split(":", 1)[1])
+    bal = await db.get_balance(call.from_user.id)
+    if bal < amount:
+        await call.answer()
+        await _edit(call, texts.need_topup(texts.money(amount, lang, rate),
+                                           texts.money(bal, lang, rate), lang), balance_kb(lang))
+        return
+    if not await db.deduct_balance(call.from_user.id, amount):
+        await call.answer(_tt(lang, "Недостаточно средств.", "Not enough balance."), show_alert=True)
+        return
+    # уникальный код
+    code = None
+    for _ in range(5):
+        candidate = "GIFT" + secrets.token_hex(3).upper()
+        if await db.get_promo(candidate) is None:
+            code = candidate
+            break
+    if code is None:
+        await db.add_balance(call.from_user.id, amount)  # вернуть, если не смогли
+        await call.answer(_tt(lang, "Не удалось создать код, попробуй ещё раз.",
+                              "Couldn't create the code, try again."), show_alert=True)
+        return
+    await db.create_gift_code(code, amount, created_by=call.from_user.id)
+    new_bal = await db.get_balance(call.from_user.id)
+    await call.answer()
+    await _edit(call, texts.gift_created(code, texts.money(amount, lang, rate),
+                                         texts.money(new_bal, lang, rate), lang), balance_kb(lang))
+
+
+# ============ РЕФЕРАЛКА ============
+
+@router.callback_query(F.data == "ref")
+async def cb_ref(call: CallbackQuery, bot: Bot):
+    lang = await _lang(call.from_user.id)
+    me = await bot.me()
+    link = f"https://t.me/{me.username}?start=ref_{call.from_user.id}"
+    st = await db.referral_stats(call.from_user.id)
+    await _edit(call, texts.referral(link, st, lang), referral_kb(lang))
+    await call.answer()
+
+
+# ============ ИСТОРИЯ ПЛАТЕЖЕЙ ============
+
+@router.callback_query(F.data == "history")
+async def cb_history(call: CallbackQuery):
+    lang = await _lang(call.from_user.id)
+    rate = await _rate(lang)
+    items = await db.pay_history(call.from_user.id)
+    await _edit(call, texts.pay_history(items, lang, rate), back_to_menu_kb(lang))
+    await call.answer()
+
+
+# ============ ВЫВОД РЕФЕРАЛЬНОГО ЗАРАБОТКА ============
+
+@router.callback_query(F.data == "refwd")
+async def cb_ref_withdraw(call: CallbackQuery, bot: Bot):
+    lang = await _lang(call.from_user.id)
+    cash = await db.get_ref_cash(call.from_user.id)
+    if cash < REF_MIN_PAYOUT:
+        await _edit(call, texts.payout_min_not_reached(cash, lang), referral_kb(lang))
+        await call.answer()
+        return
+    if await db.has_pending_payout(call.from_user.id):
+        await _edit(call, texts.payout_pending_already(lang), referral_kb(lang))
+        await call.answer()
+        return
+    pid = await db.create_payout(call.from_user.id, cash)
+    if not pid:
+        await call.answer(_tt(lang, "Не удалось создать заявку.", "Could not create request."), show_alert=True)
+        return
+    await _edit(call, texts.payout_created(cash, lang), back_to_menu_kb(lang))
+    await call.answer()
+    # уведомляем админов с кнопками «выплачено / отклонить»
+    u = await db.get_user(call.from_user.id) or {}
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✅ Выплачено", callback_data=f"apay:done:{pid}")
+    kb.button(text="❌ Отклонить", callback_data=f"apay:rej:{pid}")
+    kb.button(text="✉️ Написать", callback_data=f"amsg:{call.from_user.id}")
+    kb.adjust(2, 1)
+    await _notify_admins(bot, texts.admin_payout_alert(
+        pid, call.from_user.id, cash,
+        username=u.get("username"), full_name=u.get("full_name")),
+        reply_markup=kb.as_markup())
+
+
+# ============ ЗАМОРОЗКА ПОДПИСКИ ============
+
+@router.callback_query(F.data.startswith("frz:"))
+async def cb_freeze_ask(call: CallbackQuery):
+    lang = await _lang(call.from_user.id)
+    rate = await _rate(lang)
+    cid = int(call.data.split(":")[1])
+    cfg = await db.get_config(cid)
+    if not cfg or cfg.get("user_id") != call.from_user.id:
+        await call.answer(_tt(lang, "Подписка не найдена.", "Subscription not found."), show_alert=True)
+        return
+    bal = await db.get_balance(call.from_user.id)
+    region = texts.region_name(cfg["region"], lang)
+    kb = InlineKeyboardBuilder()
+    kb.button(text=_tt(lang, f"⏸ Заморозить за {FREEZE_PRICE} ₽", f"⏸ Pause for {FREEZE_PRICE} ₽"),
+              callback_data=f"frzok:{cid}")
+    kb.button(text=_tt(lang, "⬅️ Назад", "⬅️ Back"), callback_data="my")
+    kb.adjust(1)
+    await _edit(call, texts.freeze_offer(region, texts.money(bal, lang, rate), lang), kb.as_markup())
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("frzok:"))
+async def cb_freeze_do(call: CallbackQuery):
+    lang = await _lang(call.from_user.id)
+    rate = await _rate(lang)
+    cid = int(call.data.split(":")[1])
+    cfg = await db.get_config(cid)
+    if not cfg or cfg.get("user_id") != call.from_user.id:
+        await call.answer(_tt(lang, "Подписка не найдена.", "Subscription not found."), show_alert=True)
+        return
+    # лимит: не чаще одной заморозки в FREEZE_COOLDOWN_DAYS дней
+    ok, nxt = await db.can_freeze(cid, FREEZE_COOLDOWN_DAYS)
+    if not ok:
+        until = (nxt or "")[:10]
+        await db.log_event(call.from_user.id, "freeze_failed",
+                            meta={"reason": "cooldown", "region": cfg["region"], "config_id": cid},
+                            source="bot")
+        await _edit(call, texts.freeze_cooldown(until, lang), back_to_menu_kb(lang))
+        await call.answer()
+        return
+    bal = await db.get_balance(call.from_user.id)
+    if bal < FREEZE_PRICE:
+        await db.log_event(call.from_user.id, "freeze_failed", amount=FREEZE_PRICE,
+                            meta={"reason": "need_topup", "region": cfg["region"], "balance": bal},
+                            source="bot")
+        await _edit(call, texts.freeze_need_balance(
+            texts.money(FREEZE_PRICE, lang, rate), texts.money(bal, lang, rate), lang),
+            balance_kb(lang))
+        await call.answer()
+        return
+    if not await db.deduct_balance(call.from_user.id, FREEZE_PRICE):
+        await call.answer(_tt(lang, "Недостаточно средств.", "Not enough balance."), show_alert=True)
+        return
+    new_exp = await db.extend_config(cid, FREEZE_DAYS)
+    await db.mark_frozen(cid)
+    await db.log_event(call.from_user.id, "freeze", amount=FREEZE_PRICE,
+                        meta={"region": cfg["region"], "config_id": cid, "days": FREEZE_DAYS},
+                        source="bot")
+    region = texts.region_name(cfg["region"], lang)
+    await _edit(call, texts.freeze_done(region, new_exp.strftime("%d.%m.%Y"), lang),
+                back_to_menu_kb(lang))
+    await call.answer(_tt(lang, "Готово ⏸", "Done ⏸"))
+
+
+# ============ ФОНОВЫЕ: предупреждение о балансе и возврат ушедших ============
+
+async def lowbal_warn(bot: Bot, cfg: dict):
+    """Предупреждает о нехватке баланса перед автопродлением (один раз на подписку)."""
+    user_id = cfg["user_id"]
+    plan = cfg["plan"] or "standard"
+    period = cfg["period"] if cfg["period"] in ("month", "year") else "month"
+    full = price_rub(plan, 1, period)
+    loy = loyalty_percent_for(await db.total_spent(user_id))
+    to_pay = full - full * loy // 100
+    bal = await db.get_balance(user_id)
+    if bal >= to_pay:
+        return  # хватает — не дёргаем
+    await db.mark_lowbal_notified(cfg["id"])
+    lang = await db.get_lang(user_id)
+    rate = await _rate(lang)
+    try:
+        await bot.send_message(
+            user_id,
+            texts.autopay_low_warn(texts.region_name(cfg["region"], lang),
+                                   texts.money(to_pay, lang, rate),
+                                   texts.money(bal, lang, rate), lang),
+            reply_markup=balance_kb(lang))
+    except Exception:
+        pass
+
+
+async def send_winback(bot: Bot, cand: dict):
+    """Шлёт ушедшему клиенту разовый промокод на скидку и помечает, что уже слали."""
+    import random
+    import string
+    user_id = cand["user_id"]
+    await db.mark_winback(cand["id"])
+    code = "BACK" + "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+    try:
+        await db.create_promo(code, "discount", percent=WINBACK_PROMO_PERCENT, max_uses=1)
+        lang = await db.get_lang(user_id)
+        await bot.send_message(user_id, texts.winback_msg(
+            texts.region_name(cand["region"], lang), code, lang))
+    except Exception:
+        pass
+
+
+async def send_trial_reminder(bot: Bot, cand: dict):
+    """Кто попробовал триал, но не купил — личный промокод-скидка через N дней."""
+    import random
+    import string
+    user_id = cand["user_id"]
+    await db.mark_trial_reminded(user_id)
+    code = "TRY" + "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+    try:
+        await db.create_promo(code, "discount", percent=TRIAL_REMINDER_PROMO_PERCENT, max_uses=1)
+        lang = cand.get("lang") or await db.get_lang(user_id)
+        kb = InlineKeyboardBuilder()
+        kb.button(text=_tt(lang, "🌐 Купить подписку", "🌐 Buy subscription"), callback_data="buy")
+        await bot.send_message(user_id, texts.trial_reminder_msg(
+            code, TRIAL_REMINDER_PROMO_PERCENT, TRIAL_REMINDER_PROMO_DAYS, lang),
+            reply_markup=kb.as_markup())
+    except Exception:
+        pass
+
+
+def _bonus_channel_ref():
+    """BONUS_CHANNEL_ID может быть @username или числовой -100... — приводим к нужному типу."""
+    cid = (BONUS_CHANNEL_ID or "").strip()
+    if not cid:
+        return None
+    if cid.lstrip("-").isdigit():
+        return int(cid)
+    return cid if cid.startswith("@") else "@" + cid
+
+async def _trial_sub_ok(bot: Bot, user_id: int) -> bool:
+    """Проверка обязательной подписки на канал перед выдачей триала.
+    Если канал не настроен (BONUS_CHANNEL_ID пуст) — гейт отключён, триал доступен всем."""
+    ref = _bonus_channel_ref()
+    if not ref:
+        return True
+    try:
+        member = await bot.get_chat_member(ref, user_id)
+        return member.status in ("member", "administrator", "creator")
+    except Exception:
+        return False
+
+
+def _trial_sub_kb(lang="ru", check_cb="trialpromocheck"):
+    kb = InlineKeyboardBuilder()
+    kb.button(text=_tt(lang, "📢 Подписаться", "📢 Subscribe"), url=NEWS_CHANNEL_URL)
+    kb.button(text=_tt(lang, "✅ Я подписался", "✅ I subscribed"), callback_data=check_cb)
+    kb.button(text=_tt(lang, "⬅️ В меню", "⬅️ Back to menu"), callback_data="menu")
+    kb.adjust(1)
+    return kb.as_markup()
+
+@router.callback_query(F.data == "chanbonus")
+async def cb_chanbonus(call: CallbackQuery, bot: Bot):
+    lang = await _lang(call.from_user.id)
+    ref = _bonus_channel_ref()
+    if not ref:
+        await call.answer(_tt(lang, "Бонус временно недоступен.", "Bonus is unavailable."), show_alert=True)
+        return
+    if await db.channel_bonus_claimed(call.from_user.id):
+        await _edit(call, texts.chanbonus_already(lang), back_to_menu_kb(lang))
+        await call.answer()
+        return
+    # проверяем подписку
+    try:
+        member = await bot.get_chat_member(ref, call.from_user.id)
+        subscribed = member.status in ("member", "administrator", "creator")
+    except Exception:
+        subscribed = False
+    if not subscribed:
+        await _edit(call, texts.chanbonus_need_sub(CHANNEL_BONUS_DAYS, "новостной канал", lang),
+                    chanbonus_kb(lang))
+        await call.answer(_tt(lang, "Подписку пока не вижу.", "Subscription not found yet."))
+        return
+    applied, region = await db.extend_active(call.from_user.id, CHANNEL_BONUS_DAYS)
+    if not applied:
+        await _edit(call, texts.chanbonus_no_active(lang), back_to_menu_kb(lang))
+        await call.answer()
+        return
+    await db.set_channel_bonus_claimed(call.from_user.id)
+    rname = texts.region_name(region, lang) if region else ""
+    await _edit(call, texts.chanbonus_ok(CHANNEL_BONUS_DAYS, rname, lang), back_to_menu_kb(lang))
+    await call.answer("✅")
+
+
+# ============ ПРОБНЫЙ ПЕРИОД ============
+
+@router.callback_query(F.data == "trial")
+async def cb_trial(call: CallbackQuery, bot: Bot):
+    lang = await _lang(call.from_user.id)
+    rate = await _rate(lang)
+    user = await db.get_user(call.from_user.id)
+    if user and user["trial_used"]:
+        await _edit(call, texts.trial_used(lang), plans_kb(lang, rate))
+        await call.answer()
+        return
+    if not await _trial_sub_ok(bot, call.from_user.id):
+        await _edit(call, texts.trial_need_sub(lang=lang), _trial_sub_kb(lang))
+        await call.answer()
+        return
+    regions = await db.trial_regions()
+    if regions:
+        await _edit(call, texts.trial_intro(lang), trial_locations_kb(regions, lang))
+        await call.answer()
+        return
+    applied, region = await db.extend_active(call.from_user.id, TRIAL_DAYS)
+    if applied:
+        await db.mark_trial_used(call.from_user.id)
+        await _edit(call, texts.trial_busy_bonus(texts.region_name(region, lang), TRIAL_DAYS, lang), back_to_menu_kb(lang))
+    else:
+        await _edit(call, texts.trial_busy(lang), plans_kb(lang, rate))
+    await call.answer()
+
+@router.callback_query(F.data == "trialcheck")
+async def cb_trial_check(call: CallbackQuery, bot: Bot):
+    lang = await _lang(call.from_user.id)
+    rate = await _rate(lang)
+    if not await _trial_sub_ok(bot, call.from_user.id):
+        await call.answer(_tt(lang, "Подписку пока не вижу.", "Subscription not found yet."), show_alert=True)
+        return
+    await call.answer("✅")
+    user = await db.get_user(call.from_user.id)
+    if user and user["trial_used"]:
+        await _edit(call, texts.trial_used(lang), plans_kb(lang, rate))
+        return
+    regions = await db.trial_regions()
+    if regions:
+        await _edit(call, texts.trial_intro(lang), trial_locations_kb(regions, lang))
+        return
+    applied, region = await db.extend_active(call.from_user.id, TRIAL_DAYS)
+    if applied:
+        await db.mark_trial_used(call.from_user.id)
+        await _edit(call, texts.trial_busy_bonus(texts.region_name(region, lang), TRIAL_DAYS, lang), back_to_menu_kb(lang))
+    else:
+        await _edit(call, texts.trial_busy(lang), plans_kb(lang, rate))
+
+@router.callback_query(F.data.startswith("trialloc:"))
+async def cb_trialloc(call: CallbackQuery, bot: Bot):
+    lang = await _lang(call.from_user.id)
+    region = call.data.split(":", 1)[1]
+    if not await _trial_sub_ok(bot, call.from_user.id):
+        await call.answer(_tt(lang, "Сначала подпишись на канал.", "Please subscribe to the channel first."), show_alert=True)
+        return
+    user = await db.get_user(call.from_user.id)
+
+    if user and user["trial_used"]:
+        await call.answer(
+            _tt(lang, "Пробный период уже использован.", "Trial already used."),
+            show_alert=True
+        )
+        return
+
+    reserved = await db.reserve_trial(region, call.from_user.id)
+    if not reserved:
+        await call.answer(
+            _tt(lang, "😔 Сервер закончился, выбери другой.", "😔 Out of stock, pick another."),
+            show_alert=True
+        )
+        return
+
+    await call.answer()
+    await db.mark_trial_used(call.from_user.id)
+
+    cfg = reserved[0]
+    expires = await db.mark_sold(cfg["id"], call.from_user.id, "standard", "trial")
+
+    # A/B: вариант может удлинять триал (extra_days к базовым TRIAL_DAYS)
+    extra = int(ab.variant_params(call.from_user.id).get("extra_days", 0) or 0)
+    if extra > 0:
+        expires = await db.extend_config(cfg["id"], extra)
+
+    await call.message.answer(
+        _tt(
+            lang,
+            "🎁 <b>Пробный доступ активирован!</b>",
+            "🎁 <b>Trial access activated!</b>"
+        )
+    )
+
+    full = await db.get_config(cfg["id"])
+
+
+    # уведомляем админов: кто и где взял пробный доступ
+    from datetime import datetime
+
+    u = await db.get_user(call.from_user.id) or {}
+
+    await _notify_admins(
+        bot,
+        texts.admin_trial_alert(
+            region,
+            call.from_user.id,
+            username=u.get("username"),
+            full_name=u.get("full_name"),
+            when=datetime.now().strftime("%d.%m %H:%M"),
+        )
+    )
+
+@router.callback_query(F.data == "trialpromo")
+async def cb_trialpromo(call: CallbackQuery, bot: Bot):
+    lang = await _lang(call.from_user.id)
+    rate = await _rate(lang)
+    user = await db.get_user(call.from_user.id)
+    if user and user["trial_used"]:
+        await _edit(call, texts.trial_used(lang), plans_kb(lang, rate))
+        await call.answer()
+        return
+    if not await _trial_sub_ok(bot, call.from_user.id):
+        await _edit(call, texts.trial_need_sub(lang=lang), _trial_sub_kb(lang))
+        await call.answer()
+        return
+    regions = await db.trial_regions()
+    if regions:
+        await _edit(call, texts.trial_promo_intro(PROMO_TRIAL_PRICE, lang),
+                    trial_promo_locations_kb(regions, lang))
+        await call.answer()
+        return
+    await call.answer(_tt(lang, "😔 Сервера пока не готовы.", "😔 No servers ready yet."), show_alert=True)
+    
+@router.callback_query(F.data == "trialpromocheck")
+async def cb_trialpromo_check(call: CallbackQuery, bot: Bot):
+    lang = await _lang(call.from_user.id)
+    rate = await _rate(lang)
+    if not await _trial_sub_ok(bot, call.from_user.id):
+        await call.answer(_tt(lang, "Подписку пока не вижу.", "Subscription not found yet."), show_alert=True)
+        return
+    await call.answer("✅")
+    user = await db.get_user(call.from_user.id)
+    if user and user["trial_used"]:
+        await _edit(call, texts.trial_used(lang), plans_kb(lang, rate))
+        return
+    regions = await db.trial_regions()
+    if not regions:
+        await call.message.answer(_tt(lang, "😔 Сервера пока не готовы.", "😔 No servers ready yet."))
+        return
+    await _edit(call, texts.trial_promo_intro(PROMO_TRIAL_PRICE, lang), trial_promo_locations_kb(regions, lang))
+
+@router.callback_query(F.data.startswith("trialpromoloc:"))
+async def cb_trialpromoloc(call: CallbackQuery, bot: Bot):
+    lang = await _lang(call.from_user.id)
+    region = call.data.split(":", 1)[1]
+
+    if not await _trial_sub_ok(bot, call.from_user.id):
+        await call.answer(_tt(lang, "Сначала подпишись на канал.", "Please subscribe to the channel first."), show_alert=True)
+        return
+
+    user = await db.get_user(call.from_user.id)
+    if user and user["trial_used"]:
+        await call.answer(_tt(lang, "Пробный период уже использован.", "Trial already used."), show_alert=True)
+        return
+
+    reserved = await db.reserve_trial(region, call.from_user.id)
+    if not reserved:
+        await call.answer(_tt(lang, "😔 Сервер закончился, выбери другой.", "😔 Out of stock, pick another."), show_alert=True)
+        return
+
+    config_ids = [c["id"] for c in reserved]
+    order_id = await db.create_order(
+        call.from_user.id, "standard", 1, "trial", region, config_ids,
+        PROMO_TRIAL_PRICE, 0, PROMO_TRIAL_PRICE,
+    )
+    await call.answer()
+    await call.message.answer(
+        _tt(lang, f"✨ <b>Пробный доступ на 3 дня</b>\n{texts.LINE}\n"
+                  f"📍 {texts.region_name(region, lang)}\n💰 К оплате: <b>{PROMO_TRIAL_PRICE} ₽</b>",
+            f"✨ <b>3-day trial</b>\n{texts.LINE}\n"
+            f"📍 {texts.region_name(region, lang)}\n💰 To pay: <b>{PROMO_TRIAL_PRICE} ₽</b>")
+    )
+    await _offer_payment(call.message, bot, call.from_user.id, order_id, lang)
+
+    async def reserve_random(n, user_id) -> list[dict] | None:
+    """Бронь n свободных платных (не триал) конфигов из ЛЮБЫХ регионов,
+    выбранных случайно — используется для акций с миксом стран."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         await db.execute("BEGIN IMMEDIATE")
         cur = await db.execute(
-            f"SELECT * FROM configs WHERE region=? AND status='free' {extra_where} "
-            f"ORDER BY {order_by} LIMIT ?",
-            (region, n),
+            "SELECT * FROM configs WHERE status='free' AND is_trial=0 "
+            "ORDER BY RANDOM() LIMIT ?",
+            (n,),
         )
         rows = [dict(r) for r in await cur.fetchall()]
         if len(rows) < n:
@@ -934,1207 +1020,1494 @@ async def _reserve(region, n, user_id, extra_where, order_by):
             )
         await db.commit()
         return rows
-
-
-async def get_config(config_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM configs WHERE id=?", (config_id,))
-        row = await cur.fetchone()
-        return dict(row) if row else None
-
-
-async def mark_sold(config_id, user_id, plan, period) -> datetime:
-    sold = now()
-    expires = sold + timedelta(days=PERIOD_DAYS[period])
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE configs SET status='sold', user_id=?, plan=?, period=?, "
-            "sold_at=?, expires_at=?, reserved_at=NULL WHERE id=?",
-            (user_id, plan, period, iso(sold), iso(expires), config_id),
-        )
-        await db.commit()
-    return expires
-
-
-async def expire_configs():
-    cutoff = iso(now())
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute(
-            "SELECT id, user_id, region FROM configs "
-            "WHERE status='sold' AND expires_at IS NOT NULL AND expires_at < ?", (cutoff,),
-        )
-        rows = [dict(r) for r in await cur.fetchall()]
-        for cfg in rows:
-            await db.execute("UPDATE configs SET status='expired' WHERE id=?", (cfg["id"],))
-        await db.commit()
-        return rows
-
-
-async def user_configs(user_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute(
-            "SELECT * FROM configs WHERE user_id=? AND status IN ('sold','expired') ORDER BY id",
-            (user_id,),
-        )
-        return [dict(r) for r in await cur.fetchall()]
-
-
-async def delete_free_configs(region):
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "DELETE FROM configs WHERE region=? AND status IN ('free','broken')", (region,))
-        await db.commit()
-        return cur.rowcount
-
-
-# ---------- запасы ----------
-
-async def scan_stock_alerts() -> list[tuple]:
-    alerts = []
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute(
-            "SELECT region, SUM(CASE WHEN status='free' AND is_trial=0 THEN 1 ELSE 0 END) free "
-            "FROM configs WHERE is_trial=0 GROUP BY region"
-        )
-        regions = [(r["region"], r["free"]) for r in await cur.fetchall()]
-        for region, free in regions:
-            cur = await db.execute(
-                "SELECT low_notified, empty_notified FROM region_state WHERE region=?", (region,)
-            )
-            st = await cur.fetchone()
-            low_n = st["low_notified"] if st else 0
-            emp_n = st["empty_notified"] if st else 0
-            if free == 0:
-                if not emp_n:
-                    alerts.append((region, "empty", free))
-                    await db.execute(
-                        "INSERT INTO region_state(region, low_notified, empty_notified) VALUES(?,1,1) "
-                        "ON CONFLICT(region) DO UPDATE SET low_notified=1, empty_notified=1", (region,))
-            elif free <= LOW_STOCK_THRESHOLD:
-                if not low_n:
-                    alerts.append((region, "low", free))
-                    await db.execute(
-                        "INSERT INTO region_state(region, low_notified, empty_notified) VALUES(?,1,0) "
-                        "ON CONFLICT(region) DO UPDATE SET low_notified=1, empty_notified=0", (region,))
-            else:
-                if low_n or emp_n:
-                    await db.execute(
-                        "INSERT INTO region_state(region, low_notified, empty_notified) VALUES(?,0,0) "
-                        "ON CONFLICT(region) DO UPDATE SET low_notified=0, empty_notified=0", (region,))
-        await db.commit()
-    return alerts
-
-
-# ---------- заказы ----------
-
-async def create_order(user_id, plan, devices, period, region, config_ids, full_rub, discount, rub) -> int:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "INSERT INTO orders(user_id, plan, devices, period, region, config_ids, "
-            "full_rub, discount, rub, status, created_at) VALUES(?,?,?,?,?,?,?,?,?, 'pending', ?)",
-            (user_id, plan, devices, period, region, ",".join(map(str, config_ids)),
-             full_rub, discount, rub, iso(now())),
-        )
-        await db.commit()
-        return cur.lastrowid
-
-
-async def get_order(order_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM orders WHERE id=?", (order_id,))
-        row = await cur.fetchone()
-        return dict(row) if row else None
-
-
-async def set_order_status(order_id, status):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE orders SET status=? WHERE id=?", (status, order_id))
-        await db.commit()
-
-
-async def release_stale_orders():
-    cutoff = iso(now() - timedelta(minutes=ORDER_TTL_MIN))
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute(
-            "SELECT * FROM orders WHERE status='pending' AND created_at < ?", (cutoff,))
-        for o in [dict(r) for r in await cur.fetchall()]:
-            ids = [int(x) for x in o["config_ids"].split(",") if x]
-            if ids:
-                qs = ",".join("?" * len(ids))
-                await db.execute(
-                    f"UPDATE configs SET status='free', user_id=NULL, reserved_at=NULL "
-                    f"WHERE id IN ({qs}) AND status='reserved'", ids)
-            await db.execute("UPDATE orders SET status='cancelled' WHERE id=?", (o["id"],))
-        await db.commit()
-
-
-# ---------- платежи / статистика ----------
-
-async def record_payment(user_id, order_id, amount, currency, charge_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "INSERT INTO payments(user_id, order_id, amount, currency, charge_id, created_at) "
-            "VALUES(?,?,?,?,?,?)",
-            (user_id, order_id, amount, currency, charge_id, iso(now())),
-        )
-        await db.commit()
-
-# ---------- журнал событий (для админ-ленты транзакций) ----------
-
-async def log_event(user_id, kind, amount=None, meta=None, source="webapp"):
-    """kind: topup_invoice, topup_paid, order_paid, order_failed,
-    freeze, freeze_failed, refund. source: bot | webapp | webhook | admin."""
-    async with aiosqlite.connect(DB_PATH) as dbx:
-        await dbx.execute(
-            "INSERT INTO events(user_id, kind, amount, meta, source, created_at) VALUES(?,?,?,?,?,?)",
-            (user_id, kind, amount, json.dumps(meta or {}, ensure_ascii=False), source, iso(now())),
-        )
-        await dbx.commit()
-
-
-async def list_events(limit=100, kind=None, user_id=None):
-    async with aiosqlite.connect(DB_PATH) as dbx:
-        dbx.row_factory = aiosqlite.Row
-        q = ("SELECT e.*, u.username, u.full_name, COALESCE(u.balance_rub,0) balance_rub "
-             "FROM events e LEFT JOIN users u ON u.user_id = e.user_id WHERE 1=1")
-        params = []
-        if kind and kind != "all":
-            q += " AND e.kind=?"
-            params.append(kind)
-        if user_id:
-            q += " AND e.user_id=?"
-            params.append(user_id)
-        q += " ORDER BY e.created_at DESC LIMIT ?"
-        params.append(limit)
-        rows = [dict(r) for r in await (await dbx.execute(q, params)).fetchall()]
-        for r in rows:
-            try:
-                r["meta"] = json.loads(r["meta"] or "{}")
-            except Exception:
-                r["meta"] = {}
-        return rows
-
-
-async def events_summary():
-    async with aiosqlite.connect(DB_PATH) as dbx:
-        cur = await dbx.execute("SELECT kind, COUNT(*) c, COALESCE(SUM(amount),0) s FROM events GROUP BY kind")
-        return {row[0]: {"count": row[1], "sum": row[2]} for row in await cur.fetchall()}
-# ============ ПОДПИСКИ СО СЛОТАМИ (многоустройственные тарифы) ============
-
-async def create_subscription(user_id, plan, devices, period) -> int:
-    n = now()
-    exp = iso(n + timedelta(days=PERIOD_DAYS[period]))
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "INSERT INTO subscriptions(user_id, plan, devices, period, expires_at, status, created_at) "
-            "VALUES(?,?,?,?,?, 'active', ?)",
-            (user_id, plan, devices, period, exp, iso(n)))
-        await db.commit()
-        return cur.lastrowid
-
-
-async def get_subscription(sub_id) -> dict | None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM subscriptions WHERE id=?", (sub_id,))
-        row = await cur.fetchone()
-        return dict(row) if row else None
-
-
-async def subscription_configs(sub_id) -> list[dict]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute(
-            "SELECT * FROM configs WHERE sub_id=? AND status IN ('sold','expired') ORDER BY id", (sub_id,))
-        return [dict(r) for r in await cur.fetchall()]
-
-
-async def user_subscriptions(user_id) -> list[dict]:
-    """Активные подписки пользователя с числом активированных/свободных слотов."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute(
-            "SELECT * FROM subscriptions WHERE user_id=? AND status='active' ORDER BY id DESC", (user_id,))
-        subs = [dict(r) for r in await cur.fetchall()]
-        for s in subs:
-            c = await (await db.execute(
-                "SELECT COUNT(*) c FROM configs WHERE sub_id=? AND status IN ('sold','expired')",
-                (s["id"],))).fetchone()
-            s["activated"] = c["c"]
-            s["free_slots"] = max(s["devices"] - s["activated"], 0)
-        return subs
-
-
-async def activate_slot(sub_id, region, user_id) -> dict | None:
-    """Бронирует один свободный конфиг в регионе под слот подписки. None — нет места/стока."""
-    sub = await get_subscription(sub_id)
-    if not sub or sub["status"] != "active" or sub["user_id"] != user_id:
-        return None
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        used = await (await db.execute(
-            "SELECT COUNT(*) c FROM configs WHERE sub_id=? AND status IN ('sold','expired')",
-            (sub_id,))).fetchone()
-        if used["c"] >= sub["devices"]:
-            return None  # свободных слотов нет
-        row = await (await db.execute(
-            "SELECT id FROM configs WHERE region=? AND status='free' AND is_trial=0 "
-            "ORDER BY id LIMIT 1", (region,))).fetchone()
-        if not row:
-            return None  # нет свободного конфига в регионе
-        cid = row["id"]
-        await db.execute(
-            "UPDATE configs SET status='sold', user_id=?, plan=?, period=?, sub_id=?, "
-            "sold_at=?, expires_at=? WHERE id=? AND status='free'",
-            (user_id, sub["plan"], sub["period"], sub_id, iso(now()), sub["expires_at"], cid))
-        await db.commit()
-        cur = await db.execute("SELECT * FROM configs WHERE id=?", (cid,))
-        return dict(await cur.fetchone())
-
-
-async def active_plan(user_id) -> str | None:
-    """Текущий тариф пользователя: по активной подписке, иначе по активному конфигу."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        row = await (await db.execute(
-            "SELECT plan FROM subscriptions WHERE user_id=? AND status='active' "
-            "ORDER BY id DESC LIMIT 1", (user_id,))).fetchone()
-        if row and row[0]:
-            return row[0]
-        row = await (await db.execute(
-            "SELECT plan FROM configs WHERE user_id=? AND status='sold' AND plan IS NOT NULL "
-            "ORDER BY id DESC LIMIT 1", (user_id,))).fetchone()
-        return row[0] if row and row[0] else None
-
-
-# ============ ЗАПРОСЫ СМЕНЫ РЕГИОНА (через одобрение админа) ============
-
-async def create_region_change(user_id, config_id, from_region) -> int:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "INSERT INTO region_change_requests(user_id, config_id, from_region, status, created_at) "
-            "VALUES(?,?,?, 'pending', ?)", (user_id, config_id, from_region, iso(now())))
-        await db.commit()
-        return cur.lastrowid
-
-
-async def get_region_change(req_id) -> dict | None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM region_change_requests WHERE id=?", (req_id,))
-        row = await cur.fetchone()
-        return dict(row) if row else None
-
-
-async def set_region_change_status(req_id, status):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE region_change_requests SET status=? WHERE id=?", (status, req_id))
-        await db.commit()
-
-
-async def digest_stats() -> dict:
-    """Сводка за последние 24 часа для ежедневного дайджеста админам."""
-    cut = iso(now() - timedelta(hours=24))
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        new_users = (await (await db.execute(
-            "SELECT COUNT(*) c FROM users WHERE created_at>=?", (cut,))).fetchone())["c"]
-        row = await (await db.execute(
-            "SELECT COUNT(*) cnt, COALESCE(SUM(amount),0) rub FROM payments WHERE created_at>=?",
-            (cut,))).fetchone()
-        sales_cnt, revenue = row["cnt"], row["rub"]
-        trials = (await (await db.execute(
-            "SELECT COUNT(*) c FROM configs WHERE is_trial=1 AND sold_at>=?", (cut,))).fetchone())["c"]
-        pending_po = (await (await db.execute(
-            "SELECT COUNT(*) c FROM orders WHERE status='preorder'")).fetchone())["c"]
-        free_left = (await (await db.execute(
-            "SELECT COUNT(*) c FROM configs WHERE status='free' AND is_trial=0")).fetchone())["c"]
-        low = await (await db.execute(
-            "SELECT COUNT(*) c FROM (SELECT region FROM configs WHERE is_trial=0 "
-            "GROUP BY region HAVING SUM(status='free')<=3)")).fetchone()
-        return {"new_users": new_users, "sales_cnt": sales_cnt, "revenue": revenue,
-                "trials": trials, "pending_po": pending_po, "free_left": free_left,
-                "low_stock": low["c"]}
-
-
-async def stats():
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute(
-            "SELECT region, MAX(is_premium) prem, MAX(is_trial) tr, SUM(status='free') free, "
-            "SUM(status='reserved') reserved, SUM(status='sold') sold, "
-            "SUM(status='expired') expired, COUNT(*) total "
-            "FROM configs GROUP BY region ORDER BY prem, region"
-        )
-        per_region = [dict(r) for r in await cur.fetchall()]
-        cur = await db.execute("SELECT COUNT(*) c FROM users")
-        users_count = (await cur.fetchone())["c"]
-        cur = await db.execute(
-            "SELECT currency, COALESCE(SUM(amount),0) total, COUNT(*) cnt FROM payments GROUP BY currency")
-        revenue = [dict(r) for r in await cur.fetchall()]
-        cur = await db.execute("SELECT COUNT(*) c FROM orders WHERE status='paid'")
-        orders_paid = (await cur.fetchone())["c"]
-        return per_region, users_count, revenue, orders_paid
-
-
-# ---------- промокоды ----------
-
-async def create_promo(code, kind, percent=0, amount_rub=0, max_uses=0):
-    """kind: 'discount' (percent) или 'balance' (amount_rub)."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "INSERT INTO promo_codes(code, kind, percent, amount_rub, max_uses, used, active, created_at) "
-            "VALUES(?,?,?,?,?,0,1,?) "
-            "ON CONFLICT(code) DO UPDATE SET kind=?, percent=?, amount_rub=?, max_uses=?, active=1",
-            (code.upper(), kind, percent, amount_rub, max_uses, iso(now()),
-             kind, percent, amount_rub, max_uses),
-        )
-        await db.commit()
-
-
-async def get_promo(code) -> dict | None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM promo_codes WHERE code=?", (code.upper(),))
-        row = await cur.fetchone()
-        if not row:
-            return None
-        p = dict(row)
-        if not p["active"]:
-            return None
-        if p["max_uses"] and p["used"] >= p["max_uses"]:
-            return None
-        return p
-
-
-async def use_promo(code):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE promo_codes SET used=used+1 WHERE code=?", (code.upper(),))
-        await db.commit()
-
-
-async def list_promos() -> list[dict]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM promo_codes ORDER BY created_at DESC")
-        return [dict(r) for r in await cur.fetchall()]
-
-
-async def toggle_promo(code):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE promo_codes SET active=1-active WHERE code=?", (code.upper(),))
-        await db.commit()
-
-
-async def delete_promo(code):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("DELETE FROM promo_codes WHERE code=?", (code.upper(),))
-        await db.commit()
-
-
-# ---------- напоминания о продлении ----------
-
-async def expiring_soon(days) -> list[dict]:
-    """Активные платные подписки, истекающие в ближайшие N дней, без отправленного напоминания."""
-    n = now()
-    upper = iso(n + timedelta(days=days))
-    lower = iso(n)
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute(
-            "SELECT c.* FROM configs c JOIN users u ON u.user_id = c.user_id "
-            "WHERE c.status='sold' AND c.is_trial=0 AND c.renew_notified=0 AND u.autopay=0 "
-            "AND c.expires_at IS NOT NULL AND c.expires_at > ? AND c.expires_at <= ?",
-            (lower, upper),
-        )
-        return [dict(r) for r in await cur.fetchall()]
-
-
-async def mark_renew_notified(config_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE configs SET renew_notified=1 WHERE id=?", (config_id,))
-        await db.commit()
-
-
-# ---------- расширенная аналитика ----------
-
-async def stats_extended() -> dict:
-    n = now()
-    day = iso(n - timedelta(days=1))
-    week = iso(n - timedelta(days=7))
-    month = iso(n - timedelta(days=30))
-
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-
-        async def rev(cut=None):
-            base = "SELECT COALESCE(SUM(amount),0) s, COUNT(*) c FROM payments WHERE currency != 'XTR'"
-            if cut:
-                cur = await db.execute(base + " AND created_at >= ?", (cut,))
-            else:
-                cur = await db.execute(base)
-            r = await cur.fetchone()
-            return r["s"], r["c"]
-
-        # выручка по валютам (т.к. суммы в разных валютах: RUB / XTR)
-        cur = await db.execute(
-            "SELECT currency, COALESCE(SUM(amount),0) s, COUNT(*) c FROM payments GROUP BY currency")
-        by_cur = [dict(r) for r in await cur.fetchall()]
-
-        d_s, d_c = await rev(day)
-        w_s, w_c = await rev(week)
-        m_s, m_c = await rev(month)
-        a_s, a_c = await rev()
-
-        cur = await db.execute("SELECT COUNT(*) c FROM users")
-        users_count = (await cur.fetchone())["c"]
-        cur = await db.execute("SELECT COUNT(*) c FROM configs WHERE status='sold' AND is_trial=0")
-        active_subs = (await cur.fetchone())["c"]
-        cur = await db.execute("SELECT COUNT(*) c FROM configs WHERE status='free' AND is_trial=0")
-        free_paid = (await cur.fetchone())["c"]
-        cur = await db.execute("SELECT COUNT(*) c FROM configs WHERE status='free' AND is_trial=1")
-        free_trial = (await cur.fetchone())["c"]
-
-        cur = await db.execute("SELECT COALESCE(SUM(balance_rub),0) s FROM users")
-        total_balance = (await cur.fetchone())["s"]
-        cur = await db.execute("SELECT COUNT(*) c FROM preorders WHERE status='waiting'")
-        pending_preorders = (await cur.fetchone())["c"]
-
-        return {
-            "day": (d_s, d_c), "week": (w_s, w_c), "month": (m_s, m_c), "all": (a_s, a_c),
-            "by_currency": by_cur, "users": users_count, "active_subs": active_subs,
-            "free_paid": free_paid, "free_trial": free_trial,
-            "total_balance": total_balance, "pending_preorders": pending_preorders,
-        }
-
-
-async def all_regions() -> list[str]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT DISTINCT region FROM configs ORDER BY region")
-        return [r[0] for r in await cur.fetchall()]
-
-
-async def set_order_promo(order_id, code):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE orders SET promo=? WHERE id=?", (code.upper(), order_id))
-        await db.commit()
-
-
-# ---------- баланс ----------
-
-async def get_balance(user_id) -> int:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT balance_rub FROM users WHERE user_id=?", (user_id,))
-        row = await cur.fetchone()
-        return row[0] if row and row[0] else 0
-
-
-async def add_balance(user_id, rub):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE users SET balance_rub = balance_rub + ? WHERE user_id=?", (rub, user_id))
-        await db.commit()
-
-
-async def deduct_balance(user_id, rub) -> bool:
-    """Списывает rub, если хватает. True — успех."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT balance_rub FROM users WHERE user_id=?", (user_id,))
-        row = await cur.fetchone()
-        bal = row[0] if row and row[0] else 0
-        if bal < rub:
-            return False
-        await db.execute("UPDATE users SET balance_rub = balance_rub - ? WHERE user_id=?", (rub, user_id))
-        await db.commit()
-        return True
-
-
-# ---------- пополнения ----------
-
-async def create_topup(user_id, amount_rub, method) -> int:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "INSERT INTO topups(user_id, amount_rub, method, status, created_at) "
-            "VALUES(?,?,?, 'pending', ?)",
-            (user_id, amount_rub, method, iso(now())),
-        )
-        await db.commit()
-        return cur.lastrowid
-
-
-async def get_topup(topup_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM topups WHERE id=?", (topup_id,))
-        row = await cur.fetchone()
-        return dict(row) if row else None
-
-
-async def set_topup_paid(topup_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE topups SET status='paid' WHERE id=?", (topup_id,))
-        await db.commit()
-
-
-async def set_topup_ref(topup_id, ref):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE topups SET invoice_ref=? WHERE id=?", (str(ref), topup_id))
-        await db.commit()
-
-
-# ---------- предзаказы (когда сервера нет в наличии) ----------
-
-async def create_preorder(user_id, plan, devices, period, region, full_rub, discount, rub, promo, lang) -> int:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "INSERT INTO preorders(user_id, plan, devices, period, region, full_rub, discount, rub, "
-            "promo, status, lang, created_at) VALUES(?,?,?,?,?,?,?,?,?, 'waiting', ?, ?)",
-            (user_id, plan, devices, period, region, full_rub, discount, rub, promo, lang, iso(now())),
-        )
-        await db.commit()
-        return cur.lastrowid
-
-
-async def get_preorder(preorder_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM preorders WHERE id=?", (preorder_id,))
-        row = await cur.fetchone()
-        return dict(row) if row else None
-
-
-async def waiting_preorders() -> list[dict]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM preorders WHERE status='waiting' ORDER BY created_at")
-        return [dict(r) for r in await cur.fetchall()]
-
-
-async def set_preorder_status(preorder_id, status):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE preorders SET status=? WHERE id=?", (status, preorder_id))
-        await db.commit()
-
-
-async def preorders_to_refund(hours) -> list[dict]:
-    cutoff = iso(now() - timedelta(hours=hours))
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute(
-            "SELECT * FROM preorders WHERE status='waiting' AND created_at < ?", (cutoff,))
-        return [dict(r) for r in await cur.fetchall()]
-
-
-async def free_configs(config_ids):
-    """Возвращает зарезервированные конфиги обратно в свободные."""
-    ids = [int(x) for x in config_ids if x]
-    if not ids:
+        
+# ============ БАЛАНС ============
+
+@router.callback_query(F.data == "balance")
+async def cb_balance(call: CallbackQuery):
+    lang = await _lang(call.from_user.id)
+    rate = await _rate(lang)
+    bal = await db.get_balance(call.from_user.id)
+    await _edit(call, texts.balance_screen(bal, lang, rate), balance_kb(lang))
+    await call.answer()
+
+
+@router.callback_query(F.data == "topup")
+async def cb_topup(call: CallbackQuery):
+    lang = await _lang(call.from_user.id)
+    rate = await _rate(lang)
+    await _edit(call, texts.topup_intro(lang), topup_amounts_kb(TOPUP_PRESETS, lang, rate))
+    await call.answer()
+
+
+@router.callback_query(F.data == "topupcustom")
+async def cb_topup_custom(call: CallbackQuery, state: FSMContext):
+    lang = await _lang(call.from_user.id)
+    await state.set_state(TopupCustom.waiting)
+    await call.message.answer(texts.topup_custom_ask(lang))
+    await call.answer()
+
+
+@router.message(TopupCustom.waiting, Command("cancel"))
+async def cb_topup_custom_cancel(message: Message, state: FSMContext):
+    await state.clear()
+    lang = await _lang(message.from_user.id)
+    await message.answer(_tt(lang, "Отменено.", "Cancelled."), reply_markup=back_to_menu_kb(lang))
+
+
+@router.message(TopupCustom.waiting, F.text)
+async def cb_topup_custom_amount(message: Message, state: FSMContext):
+    lang = await _lang(message.from_user.id)
+    raw = message.text.strip().replace(",", ".")
+    try:
+        amount = int(float(raw))
+    except ValueError:
+        await message.answer(_tt(lang, "Введи число, например 250.", "Enter a number, e.g. 250."))
         return
-    qs = ",".join("?" * len(ids))
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            f"UPDATE configs SET status='free', user_id=NULL, reserved_at=NULL "
-            f"WHERE id IN ({qs}) AND status='reserved'", ids)
-        await db.commit()
+    if amount < 50:
+        await message.answer(_tt(lang, "Минимум 50 ₽.", "Minimum 50 ₽."))
+        return
+    await state.clear()
+    await message.answer(
+        _tt(lang, f"Сумма пополнения: <b>{amount} ₽</b>\nВыбери способ оплаты:",
+            f"Top-up amount: <b>{amount} ₽</b>\nChoose a payment method:"),
+        reply_markup=topup_methods_kb(amount, lang),
+    )
 
 
-# ---------- бан / автоплатёж ----------
-
-async def set_banned(user_id, banned: bool):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE users SET banned=? WHERE user_id=?", (1 if banned else 0, user_id))
-        await db.commit()
-
-
-async def is_banned(user_id) -> bool:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT banned FROM users WHERE user_id=?", (user_id,))
-        row = await cur.fetchone()
-        return bool(row and row[0])
+@router.callback_query(F.data.startswith("topupamt:"))
+async def cb_topup_amount(call: CallbackQuery):
+    lang = await _lang(call.from_user.id)
+    amount = int(call.data.split(":", 1)[1])
+    await _edit(call,
+                _tt(lang, f"Сумма пополнения: <b>{amount} ₽</b>\nВыбери способ оплаты:",
+                    f"Top-up amount: <b>{amount} ₽</b>\nChoose a payment method:"),
+                topup_methods_kb(amount, lang))
+    await call.answer()
 
 
-async def set_autopay(user_id, on: bool):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE users SET autopay=? WHERE user_id=?", (1 if on else 0, user_id))
-        await db.commit()
+@router.callback_query(F.data.startswith("tmethod:"))
+async def cb_topup_method(call: CallbackQuery, bot: Bot):
+    lang = await _lang(call.from_user.id)
+    _, method, amount = call.data.split(":")
+    amount = int(amount)
+    topup_id = await db.create_topup(call.from_user.id, amount, method)
+    await call.answer()
+    await _topup_invoice(call.message, bot, call.from_user.id, topup_id, amount, method, lang)
 
 
-async def get_autopay(user_id) -> bool:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT autopay FROM users WHERE user_id=?", (user_id,))
-        row = await cur.fetchone()
-        return bool(row and row[0])
+async def _topup_invoice(target, bot, user_id, topup_id, amount, method, lang):
+    title = _tt(lang, f"Пополнение баланса {amount} ₽", f"Balance top-up {amount} ₽")
+    err = _tt(lang, "⚠️ Не удалось создать счёт. Попробуй другой способ или напиши в поддержку.",
+              "⚠️ Couldn't create the invoice. Try another method or contact support.")
+    paid_btn = _tt(lang, "✅ Я оплатил — проверить", "✅ I paid — check")
+
+    if method in ("lava", "sbp", "card"):
+        try:
+            _iid, pay_url = await create_lava_invoice(topup_id, amount, title, kind="topup")
+        except Exception as e:
+            log.exception("lava topup error: %s", e)
+            await target.answer(err)
+            return
+        label = _tt(lang, "⚡️ Оплатить через СБП", "⚡️ Pay via SBP") if method == "sbp" \
+            else _tt(lang, "💳 Оплатить картой", "💳 Pay by card")
+        kb = InlineKeyboardBuilder()
+        kb.button(text=label, url=pay_url)
+        kb.button(text=paid_btn, callback_data=f"checktl:{topup_id}")
+        kb.adjust(1)
+        await target.answer(f"💳 <b>{title}</b>\n{texts.LINE}\n" +
+                            _tt(lang, "Оплати и нажми «Проверить».", "Pay and tap «Check»."),
+                            reply_markup=kb.as_markup())
+        return
+
+    if method == "crypto":
+        try:
+            invoice_id, pay_url = await create_crypto_invoice(topup_id, amount, title)
+        except Exception as e:
+            log.exception("crypto topup error: %s", e)
+            await target.answer(err)
+            return
+        if not pay_url:
+            await target.answer(err)
+            return
+        kb = InlineKeyboardBuilder()
+        kb.button(text=_tt(lang, "🪙 Оплатить криптой", "🪙 Pay with crypto"), url=pay_url)
+        kb.button(text=paid_btn, callback_data=f"checktc:{invoice_id}:{topup_id}")
+        kb.adjust(1)
+        await target.answer(f"🪙 <b>{title}</b>\n{texts.LINE}\n" +
+                            _tt(lang, "Оплати в @CryptoBot и нажми «Проверить».",
+                                "Pay in @CryptoBot and tap «Check»."),
+                            reply_markup=kb.as_markup())
+        return
 
 
-# ---------- лояльность ----------
-
-async def total_spent(user_id) -> int:
-    """Сумма всех реальных платежей пользователя в ₽ (без Telegram Stars)."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "SELECT COALESCE(SUM(amount),0) FROM payments WHERE user_id=? AND currency != 'XTR'",
-            (user_id,),
-        )
-        return (await cur.fetchone())[0] or 0
-
-# ---------- мини-апп: приветственная / возвратная скидка ----------
-
-async def has_active_subscription(user_id) -> bool:
-    """Есть ли у пользователя сейчас активный платный конфиг или слот-подписка."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "SELECT 1 FROM configs WHERE user_id=? AND status='sold' AND is_trial=0 LIMIT 1",
-            (user_id,),
-        )
-        if await cur.fetchone():
-            return True
-        cur = await db.execute(
-            "SELECT 1 FROM subscriptions WHERE user_id=? AND status='active' LIMIT 1",
-            (user_id,),
-        )
-        return await cur.fetchone() is not None
+def _resume_kb(lang="ru"):
+    kb = InlineKeyboardBuilder()
+    kb.button(text=_tt(lang, "✅ Завершить заказ", "✅ Complete order"), callback_data="resume")
+    kb.button(text=_tt(lang, "⬅️ В главное меню", "⬅️ Main menu"), callback_data="menu")
+    kb.adjust(1)
+    return kb.as_markup()
 
 
-async def has_used_webapp_offer(user_id) -> bool:
-    u = await get_user(user_id)
-    return bool(u and u.get("webapp_offer_used"))
-
-
-async def mark_webapp_offer_used(user_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE users SET webapp_offer_used=1 WHERE user_id=?", (user_id,))
-        await db.commit()
-
-
-async def webapp_offer_eligible(user_id) -> bool:
-    """Право на попап-скидку в мини-аппе: новый (ничего не покупал) ИЛИ
-    покупал раньше, но сейчас нет активной подписки — и оффер ещё не использован."""
-    if await has_used_webapp_offer(user_id):
+async def _credit_topup(target, bot, user_id, topup_id, method_name, ref, lang, state=None):
+    topup = await db.get_topup(topup_id)
+    if not topup or topup["status"] == "paid":
         return False
-    spent = await total_spent(user_id)
-    if spent == 0:
-        return True
-    return not await has_active_subscription(user_id)
-# ---------- промокоды: учёт по пользователю ----------
-
-async def promo_redeemed_by(code, user_id) -> bool:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "SELECT 1 FROM promo_redemptions WHERE code=? AND user_id=?", (code.upper(), user_id))
-        return await cur.fetchone() is not None
-
-
-async def record_promo_redemption(code, user_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "INSERT OR IGNORE INTO promo_redemptions(code, user_id, created_at) VALUES(?,?,?)",
-            (code.upper(), user_id, iso(now())),
-        )
-        await db.commit()
-
-
-# ---------- подарочные коды ----------
-
-async def create_gift_code(code, amount_rub, created_by=None) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "INSERT INTO promo_codes(code, kind, percent, amount_rub, max_uses, used, active, "
-            "is_gift, created_at) VALUES(?, 'balance', 0, ?, 1, 0, 1, 1, ?)",
-            (code.upper(), amount_rub, iso(now())),
-        )
-        await db.commit()
-
-
-# ---------- автопродление ----------
-
-async def autorenew_candidates(before_days) -> list[dict]:
-    """Активные платные подписки, истекающие в ближайшие N дней, у пользователей с autopay=1."""
-    n = now()
-    upper = iso(n + timedelta(days=before_days))
-    lower = iso(n)
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute(
-            "SELECT c.* FROM configs c JOIN users u ON u.user_id = c.user_id "
-            "WHERE c.status='sold' AND c.is_trial=0 AND u.autopay=1 AND u.banned=0 AND c.renew_notified=0 "
-            "AND c.expires_at IS NOT NULL AND c.expires_at > ? AND c.expires_at <= ?",
-            (lower, upper),
-        )
-        return [dict(r) for r in await cur.fetchall()]
-
-
-async def extend_config(config_id, days) -> datetime:
-    """Продлевает конкретный конфиг на N дней (от текущей даты окончания, если она в будущем)."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT expires_at FROM configs WHERE id=?", (config_id,))
-        row = await cur.fetchone()
-        base = now()
-        if row and row["expires_at"]:
-            try:
-                exp = datetime.fromisoformat(row["expires_at"])
-                if exp > base:
-                    base = exp
-            except (ValueError, TypeError):
-                pass
-        new_exp = base + timedelta(days=days)
-        await db.execute(
-            "UPDATE configs SET expires_at=?, status='sold', renew_notified=0 WHERE id=?",
-            (iso(new_exp), config_id),
-        )
-        await db.commit()
-        return new_exp
-
-
-# ---------- админ: карточка пользователя ----------
-
-async def find_user(query: str) -> dict | None:
-    """Поиск пользователя по числовому ID или по @username."""
-    query = query.strip().lstrip("@")
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        if query.isdigit():
-            cur = await db.execute("SELECT * FROM users WHERE user_id=?", (int(query),))
-        else:
-            cur = await db.execute("SELECT * FROM users WHERE username=? COLLATE NOCASE", (query,))
-        row = await cur.fetchone()
-        return dict(row) if row else None
-
-
-async def user_card(user_id) -> dict | None:
-    u = await get_user(user_id)
-    if not u:
-        return None
-    spent = await total_spent(user_id)
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT COUNT(*) c FROM users WHERE referred_by=?", (user_id,))
-        invited = (await cur.fetchone())["c"]
-        cur = await db.execute(
-            "SELECT region, status, expires_at FROM configs "
-            "WHERE user_id=? AND status IN ('sold','expired') ORDER BY expires_at DESC", (user_id,))
-        subs = [dict(r) for r in await cur.fetchall()]
-    u["spent"] = spent
-    u["invited"] = invited
-    u["subs"] = subs
-    return u
-
-
-async def last_paid_order(user_id) -> dict | None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute(
-            "SELECT * FROM orders WHERE user_id=? AND status='paid' ORDER BY id DESC LIMIT 1",
-            (user_id,),
-        )
-        row = await cur.fetchone()
-        return dict(row) if row else None
-
-
-async def top_referrers(limit=10) -> list[dict]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute(
-            "SELECT u.user_id, u.username, u.full_name, u.ref_earned_rub, "
-            "(SELECT COUNT(*) FROM users r WHERE r.referred_by = u.user_id) invited "
-            "FROM users u WHERE invited > 0 ORDER BY invited DESC, u.ref_earned_rub DESC LIMIT ?",
-            (limit,),
-        )
-        return [dict(r) for r in await cur.fetchall()]
-
-
-async def count_users() -> int:
-    async with aiosqlite.connect(DB_PATH) as db:
-        row = await (await db.execute("SELECT COUNT(*) FROM users")).fetchone()
-        return row[0]
-
-
-async def list_users(limit=8, offset=0) -> list[dict]:
-    """Страница пользователей (свежие сверху) для просмотра в админке."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute(
-            "SELECT user_id, username, full_name, COALESCE(balance_rub,0) balance_rub "
-            "FROM users ORDER BY rowid DESC LIMIT ? OFFSET ?", (limit, offset))
-        return [dict(r) for r in await cur.fetchall()]
-
-
-async def disable_premium(user_id, premium_plans) -> int:
-    """Отключает премиум: гасит активные премиум-подписки и премиум-конфиги пользователя."""
-    premium_plans = list(premium_plans or [])
-    if not premium_plans:
-        return 0
-    qmarks = ",".join("?" * len(premium_plans))
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur1 = await db.execute(
-            f"UPDATE subscriptions SET status='expired' WHERE user_id=? AND status='active' "
-            f"AND plan IN ({qmarks})", (user_id, *premium_plans))
-        cur2 = await db.execute(
-            f"UPDATE configs SET status='expired' WHERE user_id=? AND status='sold' "
-            f"AND plan IN ({qmarks})", (user_id, *premium_plans))
-        await db.commit()
-        return (cur1.rowcount or 0) + (cur2.rowcount or 0)
-
-
-async def export_users() -> list[dict]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute(
-            "SELECT user_id, username, full_name, lang, balance_rub, bonus_days, "
-            "ref_balance_rub, ref_earned_rub, referred_by, trial_used, banned, autopay, created_at "
-            "FROM users ORDER BY created_at")
-        return [dict(r) for r in await cur.fetchall()]
-
-
-async def export_payments() -> list[dict]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute(
-            "SELECT id, user_id, order_id, amount, currency, charge_id, created_at "
-            "FROM payments ORDER BY created_at")
-        return [dict(r) for r in await cur.fetchall()]
-
-
-# ---------- метрики / аналитика ----------
-
-async def active_subs_breakdown() -> list[tuple]:
-    """Активные платные подписки по (plan, period). Для расчёта MRR."""
-    cutoff = iso(now())
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "SELECT COALESCE(plan,'standard') plan, COALESCE(period,'month') period, COUNT(*) c "
-            "FROM configs WHERE status='sold' AND is_trial=0 "
-            "AND expires_at IS NOT NULL AND expires_at > ? GROUP BY plan, period",
-            (cutoff,),
-        )
-        return [(r[0], r[1], r[2]) for r in await cur.fetchall()]
-
-
-async def trial_conversion() -> dict:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT COUNT(*) FROM users WHERE trial_used=1")
-        trials = (await cur.fetchone())[0]
-        cur = await db.execute(
-            "SELECT COUNT(*) FROM users u WHERE u.trial_used=1 AND EXISTS("
-            "SELECT 1 FROM configs c WHERE c.user_id=u.user_id AND c.is_trial=0 "
-            "AND c.status IN ('sold','expired'))")
-        converted = (await cur.fetchone())[0]
-    rate = (converted / trials * 100) if trials else 0.0
-    return {"trials": trials, "converted": converted, "rate": rate}
-
-
-async def churn_30d() -> dict:
-    n = now()
-    lower = iso(n - timedelta(days=30))
-    cutoff = iso(n)
-    async with aiosqlite.connect(DB_PATH) as db:
-        # подписки, истёкшие за 30 дней (по пользователям)
-        cur = await db.execute(
-            "SELECT DISTINCT user_id FROM configs WHERE is_trial=0 AND status='expired' "
-            "AND expires_at IS NOT NULL AND expires_at >= ?", (lower,))
-        expired_users = {r[0] for r in await cur.fetchall()}
-        # из них — у кого СЕЙЧАС есть активная подписка (значит, продлили / не ушли)
-        cur = await db.execute(
-            "SELECT DISTINCT user_id FROM configs WHERE is_trial=0 AND status='sold' "
-            "AND expires_at IS NOT NULL AND expires_at > ?", (cutoff,))
-        active_users = {r[0] for r in await cur.fetchall()}
-    churned = len(expired_users - active_users)
-    base = len(expired_users)
-    rate = (churned / base * 100) if base else 0.0
-    return {"expired": base, "churned": churned, "rate": rate}
-
-
-async def revenue_by_day(days=14) -> list[tuple]:
-    """[(YYYY-MM-DD, сумма_₽), ...] за последние `days` дней (без Stars)."""
-    lower = iso(now() - timedelta(days=days))
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "SELECT substr(created_at,1,10) d, COALESCE(SUM(amount),0) s "
-            "FROM payments WHERE currency != 'XTR' AND created_at >= ? GROUP BY d ORDER BY d",
-            (lower,))
-        return [(r[0], r[1]) for r in await cur.fetchall()]
-
-
-async def new_users_by_day(days=14) -> list[tuple]:
-    lower = iso(now() - timedelta(days=days))
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "SELECT substr(created_at,1,10) d, COUNT(*) c FROM users WHERE created_at >= ? "
-            "GROUP BY d ORDER BY d", (lower,))
-        return [(r[0], r[1]) for r in await cur.fetchall()]
-
-
-# ---------- склад / заявки на закупку ----------
-
-# статусы restock: new → awaiting_payment → paid → done | canceled
-RESTOCK_ACTIVE = ("new", "awaiting_payment", "paid")
-
-
-async def add_configs_bulk(region, is_premium, is_trial, texts: list[str], source=None) -> tuple[int, int]:
-    """Массовое добавление WireGuard-конфигов. Возвращает (добавлено_валидных, пропущено_битых).
-    Невалидные не кладутся в продажу вовсе."""
-    from utils import is_valid_wg
-    added = skipped = 0
-    async with aiosqlite.connect(DB_PATH) as db:
-        for t in texts:
-            t = (t or "").strip()
-            if not t:
-                continue
-            if not is_valid_wg(t):
-                skipped += 1
-                continue
-            await db.execute(
-                "INSERT INTO configs(region, config_text, is_premium, is_trial, status, config_type, source, created_at) "
-                "VALUES(?,?,?,?,'free','wireguard',?,?)",
-                (region, t, 1 if is_premium else 0, 1 if is_trial else 0, source, iso(now())),
-            )
-            added += 1
-        await db.commit()
-    return added, skipped
-
-
-async def validate_free_stock() -> int:
-    """Сканирует все свободные WireGuard-конфиги, помечает невалидные как 'broken'.
-    VLESS-конфиги не трогает (у них своя валидация при загрузке). Возвращает число помеченных."""
-    from utils import is_valid_wg
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute(
-            "SELECT id, config_text FROM configs WHERE status='free' AND config_type='wireguard'")
-        rows = await cur.fetchall()
-        bad = [r["id"] for r in rows if not is_valid_wg(r["config_text"])]
-        for cid in bad:
-            await db.execute("UPDATE configs SET status='broken' WHERE id=?", (cid,))
-        await db.commit()
-    return len(bad)
-
-
-async def broken_counts() -> dict:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "SELECT region, COUNT(*) FROM configs WHERE status='broken' GROUP BY region")
-        return {r[0]: r[1] for r in await cur.fetchall()}
-
-
-async def replace_config(old_id, target_region, reason) -> dict | None:
-    """Заменяет конфиг клиента на новый из склада target_region, перенося срок действия.
-    Возвращает dict нового конфига (+old_source) или None, если свободных нет."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        await db.execute("BEGIN IMMEDIATE")
-        cur = await db.execute("SELECT * FROM configs WHERE id=?", (old_id,))
-        old = await cur.fetchone()
-        if not old:
-            await db.commit()
-            return None
-        old = dict(old)
-        # берём свободный валидный конфиг нужного региона
-        cur = await db.execute(
-            "SELECT * FROM configs WHERE region=? AND status='free' AND is_trial=0 ORDER BY id LIMIT 1",
-            (target_region,))
-        new = await cur.fetchone()
-        if not new:
-            await db.commit()
-            return None
-        new = dict(new)
-        await db.execute(
-            "UPDATE configs SET status='sold', user_id=?, plan=?, period=?, sold_at=?, "
-            "expires_at=?, reserved_at=NULL WHERE id=?",
-            (old["user_id"], old["plan"], old["period"], iso(now()), old["expires_at"], new["id"]),
-        )
-        # старый — вывести из оборота
-        await db.execute("UPDATE configs SET status='replaced' WHERE id=?", (old_id,))
-        await db.execute(
-            "INSERT INTO replacements(user_id, old_id, new_id, region, reason, old_source, created_at) "
-            "VALUES(?,?,?,?,?,?,?)",
-            (old["user_id"], old_id, new["id"], target_region, reason, old.get("source"), iso(now())),
-        )
-        await db.commit()
-        new["expires_at"] = old["expires_at"]
-        new["old_source"] = old.get("source")
-        new["old_region"] = old["region"]
-        new["plan"] = old["plan"]
-        return new
-
-async def get_user_payments(user_id: int, limit: int = 50) -> list[dict]:
-    """История транзакций для мини-аппа: пополнения + покупки тарифов."""
-    items = await pay_history(user_id, limit=limit)
-    result = []
-    for p in items:
-        if p["kind"] == "topup":
-            result.append({
-                "title": "Пополнение баланса",
-                "amount": p["amount"],
-                "status": "paid",
-                "date": (p["at"] or "")[:16].replace("T", " "),
-            })
-        elif p["kind"] == "order":
-            parts = []
-            if p.get("plan"):
-                parts.append(p["plan"].capitalize())
-            if p.get("period"):
-                parts.append(p["period"])
-            if p.get("region"):
-                parts.append(p["region"])
-            result.append({
-                "title": " · ".join(parts) if parts else "Покупка тарифа",
-                "amount": p["amount"],
-                "status": p.get("status", "paid"),
-                "date": (p["at"] or "")[:16].replace("T", " "),
-            })
-    return result
-
-async def low_stock_regions(threshold) -> list[dict]:
-    """Регионы, которые мы реально держим (есть записи в configs) со свободным остатком < threshold,
-    плюс регионы с ожидающими предзаказами. [{region, free, has_preorder}]."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "SELECT region, SUM(CASE WHEN status='free' AND is_trial=0 THEN 1 ELSE 0 END) free "
-            "FROM configs WHERE is_trial=0 GROUP BY region")
-        stock = {r[0]: (r[1] or 0) for r in await cur.fetchall()}
-        cur = await db.execute(
-            "SELECT region, COUNT(*) FROM preorders WHERE status='waiting' GROUP BY region")
-        preo = {r[0]: r[1] for r in await cur.fetchall()}
-    out = []
-    regions = set(stock) | set(preo)
-    for region in regions:
-        free = stock.get(region, 0)
-        has_pre = region in preo
-        if free < threshold or has_pre:
-            out.append({"region": region, "free": free, "has_preorder": has_pre})
-    return out
-
-
-async def restock_open_for_region(region) -> bool:
-    async with aiosqlite.connect(DB_PATH) as db:
-        marks = ",".join("?" * len(RESTOCK_ACTIVE))
-        cur = await db.execute(
-            f"SELECT 1 FROM restock_orders WHERE region=? AND status IN ({marks}) LIMIT 1",
-            (region, *RESTOCK_ACTIVE))
-        return await cur.fetchone() is not None
-
-
-async def create_restock(region, need, urgent=False) -> int:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "INSERT INTO restock_orders(region, need, status, urgent, created_at, updated_at) "
-            "VALUES(?,?,'new',?,?,?)",
-            (region, need, 1 if urgent else 0, iso(now()), iso(now())))
-        await db.commit()
-        return cur.lastrowid
-
-
-async def get_restock(rid) -> dict | None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM restock_orders WHERE id=?", (rid,))
-        row = await cur.fetchone()
-        return dict(row) if row else None
-
-
-async def list_restock(active_only=True) -> list[dict]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        if active_only:
-            marks = ",".join("?" * len(RESTOCK_ACTIVE))
-            cur = await db.execute(
-                f"SELECT * FROM restock_orders WHERE status IN ({marks}) "
-                f"ORDER BY urgent DESC, id DESC", RESTOCK_ACTIVE)
-        else:
-            cur = await db.execute("SELECT * FROM restock_orders ORDER BY id DESC LIMIT 30")
-        return [dict(r) for r in await cur.fetchall()]
-
-
-async def set_restock(rid, **fields):
-    if not fields:
+    await db.set_topup_paid(topup_id)
+    await db.add_balance(user_id, topup["amount_rub"])
+    # бонус за пополнение
+    bonus, pct = topup_bonus_for(topup["amount_rub"])
+    if bonus > 0:
+        await db.add_balance(user_id, bonus)
+    await db.record_payment(user_id, 0, topup["amount_rub"], method_name, str(ref))
+    await db.log_event(user_id, "topup_paid", amount=topup["amount_rub"],
+                        meta={"method": method_name, "topup_id": topup_id}, source="bot")
+    rate = await _rate(lang)
+    bal = await db.get_balance(user_id)
+    # если был отложенный заказ (держим сервер) — предложим его завершить
+    pending = (await state.get_data()).get("pending") if state else None
+    kb = _resume_kb(lang) if pending else balance_kb(lang)
+    await target.answer(texts.topup_paid(texts.money(topup["amount_rub"], lang, rate),
+                                          texts.money(bal, lang, rate), lang),
+                        reply_markup=kb)
+    if bonus > 0:
+        await target.answer(texts.topup_bonus_note(
+            texts.money(bonus, lang, rate), pct, lang))
+    # реф-кэшбэк при реальном пополнении
+    await _reward_referrer(user_id, topup["amount_rub"], bot)
+    await _sales_log_topup(bot, user_id, topup)
+    return True
+
+
+@router.callback_query(F.data.startswith("checktl:"))
+async def check_topup_lava(call: CallbackQuery, bot: Bot, state: FSMContext):
+    lang = await _lang(call.from_user.id)
+    topup_id = int(call.data.split(":", 1)[1])
+    try:
+        paid = await check_lava_invoice(topup_id, kind="topup")
+    except Exception as e:
+        log.exception("lava topup check error: %s", e)
+        await call.answer(_tt(lang, "Не удалось проверить, попробуй ещё раз.", "Check failed, try again."), show_alert=True)
         return
-    fields["updated_at"] = iso(now())
-    cols = ", ".join(f"{k}=?" for k in fields)
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(f"UPDATE restock_orders SET {cols} WHERE id=?", (*fields.values(), rid))
-        await db.commit()
+    if not paid:
+        await call.answer(_tt(lang, "Оплата пока не найдена. Подожди минуту.", "Payment not found yet. Wait a minute."), show_alert=True)
+        return
+    ok = await _credit_topup(call.message, bot, call.from_user.id, topup_id, "LAVA", topup_id, lang, state)
+    await call.answer(_tt(lang, "Готово ✅", "Done ✅") if ok else _tt(lang, "Уже зачислено ✅", "Already credited ✅"), show_alert=True)
 
 
-async def restock_inc_added(rid, n):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE restock_orders SET added=added+?, updated_at=? WHERE id=?",
-            (n, iso(now()), rid))
-        await db.commit()
+@router.callback_query(F.data.startswith("checktc:"))
+async def check_topup_crypto(call: CallbackQuery, bot: Bot, state: FSMContext):
+    lang = await _lang(call.from_user.id)
+    _, invoice_id, topup_id = call.data.split(":")
+    try:
+        paid = await check_crypto_invoice(int(invoice_id))
+    except Exception as e:
+        log.exception("crypto topup check error: %s", e)
+        await call.answer(_tt(lang, "Не удалось проверить, попробуй ещё раз.", "Check failed, try again."), show_alert=True)
+        return
+    if not paid:
+        await call.answer(_tt(lang, "Оплата пока не найдена. Подожди минуту.", "Payment not found yet. Wait a minute."), show_alert=True)
+        return
+    ok = await _credit_topup(call.message, bot, call.from_user.id, int(topup_id), "CRYPTO", invoice_id, lang, state)
+    await call.answer(_tt(lang, "Готово ✅", "Done ✅") if ok else _tt(lang, "Уже зачислено ✅", "Already credited ✅"), show_alert=True)
 
-# ---------- заявки на замену конфига (report) ----------
 
-async def create_report(user_id, config_id, region, reason, comment="") -> int:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "INSERT INTO config_reports(user_id, config_id, region, reason, comment, status, created_at) "
-            "VALUES(?,?,?,?,?, 'new', ?)",
-            (user_id, config_id, region, reason, comment, iso(now())),
+async def _sales_log_topup(bot, user_id, topup):
+    if not SALES_LOG_CHAT_ID:
+        return
+    try:
+        await bot.send_message(SALES_LOG_CHAT_ID,
+                               f"💵 <b>Пополнение</b>\nСумма: {topup['amount_rub']} ₽\n"
+                               f"Способ: {topup['method']}\nПользователь: <code>{user_id}</code>")
+    except Exception:
+        pass
+
+
+# ============ ПОКУПКА ============
+
+@router.callback_query(F.data == "buy")
+async def cb_buy(call: CallbackQuery):
+    lang = await _lang(call.from_user.id)
+    rate = await _rate(lang)
+    active = await db.active_plan(call.from_user.id)
+    head = _tt(lang, "🛒 <b>Выбери тариф:</b>", "🛒 <b>Choose a plan:</b>")
+    if active and active in PLANS:
+        cur_title = PLANS[active]["title"]
+        head = (_tt(lang, f"✅ Твой текущий тариф: <b>{cur_title}</b>\n"
+                          f"🔁 Переключишься на другой — скидка <b>{SWITCH_DISCOUNT_PERCENT}%</b>!\n\n",
+                          f"✅ Your current plan: <b>{cur_title}</b>\n"
+                          f"🔁 Switch to another — get <b>{SWITCH_DISCOUNT_PERCENT}%</b> off!\n\n") + head)
+    await _edit(call, head, plans_kb(lang, rate))
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("plan:"))
+async def cb_plan(call: CallbackQuery, state: FSMContext):
+    lang = await _lang(call.from_user.id)
+    rate = await _rate(lang)
+    plan = call.data.split(":", 1)[1]
+    if plan not in PLANS:
+        await call.answer()
+        return
+    active = await db.active_plan(call.from_user.id)
+    is_switch = bool(active and active in PLANS and active != plan)
+    await state.update_data(switch_plan=plan if is_switch else None)
+    card = texts.plan_card(plan, lang, rate)
+    if is_switch:
+        banner = _tt(lang,
+            f"🔁 <b>Переключение с «{PLANS[active]['title']}» — скидка {SWITCH_DISCOUNT_PERCENT}%!</b>\n"
+            f"Скидка применится автоматически при оформлении.\n\n",
+            f"🔁 <b>Switch from «{PLANS[active]['title']}» — {SWITCH_DISCOUNT_PERCENT}% off!</b>\n"
+            f"The discount applies automatically at checkout.\n\n")
+        card = banner + card
+    await _edit(call, card, devices_kb(plan, lang))
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("dev:"))
+async def cb_devices(call: CallbackQuery):
+    lang = await _lang(call.from_user.id)
+    rate = await _rate(lang)
+    _, plan, devices = call.data.split(":")
+    devices = int(devices)
+    p = PLANS[plan]
+    head = _tt(lang, "📅 Выбери период:", "📅 Choose a period:")
+    text = f"{p['emoji']} <b>{p['title']}</b> · 📱 {texts.dev_title(devices, lang)}\n\n{head}"
+    await _edit(call, text, periods_kb(plan, devices, lang, rate))
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("per:"))
+async def cb_period(call: CallbackQuery, state: FSMContext):
+    lang = await _lang(call.from_user.id)
+    rate = await _rate(lang)
+    _, plan, devices, period = call.data.split(":")
+    devices = int(devices)
+    full = price_rub(plan, devices, period)
+    loy = await _loyalty_pct(call.from_user.id)
+    floor = _switch_floor(await state.get_data(), plan)
+    disc_pct = max(loy, floor)
+    disc = full * disc_pct // 100
+    # Многоустройственный тариф → слот-подписка: регион не выбираем здесь,
+    # устройства активируются по одному в «Мои подключения».
+    if devices > 1:
+        await _edit(call, texts.sub_order_summary(plan, devices, period, full, disc, lang, rate),
+                    sub_buy_kb(plan, devices, period, lang))
+        await call.answer()
+        return
+    regions = await db.regions_for_purchase()
+    if not regions:
+        await call.answer(_tt(lang,
+            "😔 Серверов пока нет совсем. Загляни чуть позже.",
+            "😔 No servers at all yet. Please check back later."), show_alert=True)
+        return
+    await _edit(call, texts.order_summary(plan, devices, period, full, disc, lang, rate),
+                locations_kb(plan, devices, period, regions, lang))
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("subbuy:"))
+async def cb_subbuy(call: CallbackQuery, bot: Bot, state: FSMContext):
+    """Покупка слот-подписки (>1 устройства): оплата с баланса, без выбора региона."""
+    lang = await _lang(call.from_user.id)
+    rate = await _rate(lang)
+    _, plan, devices, period = call.data.split(":")
+    devices = int(devices)
+    full = price_rub(plan, devices, period)
+    data = await state.get_data()
+    promo_code = data.get("promo_code")
+    promo_percent = data.get("promo_percent", 0)
+    if data.get("promo_ctx") != f"{plan}:{devices}:{period}":
+        promo_code, promo_percent = None, 0
+    promo_disc, promo_code, _eff = await _resolve_discount(call.from_user.id, full, promo_code, promo_percent, _switch_floor(data, plan))
+    to_pay = full - promo_disc
+    bal = await db.get_balance(call.from_user.id)
+    if bal < to_pay:
+        await state.update_data(pending={
+            "type": "slots", "plan": plan, "devices": devices, "period": period, "region": "",
+            "promo_code": promo_code, "promo_percent": promo_percent,
+            "full": full, "promo_disc": promo_disc, "to_pay": to_pay,
+        })
+        await call.answer()
+        await _edit(call, texts.need_topup(texts.money(to_pay, lang, rate),
+                                           texts.money(bal, lang, rate), lang), balance_kb(lang))
+        return
+    if not await db.deduct_balance(call.from_user.id, to_pay):
+        await call.answer(_tt(lang, "Недостаточно средств.", "Not enough balance."), show_alert=True)
+        return
+    order_id = await db.create_order(call.from_user.id, plan, devices, period, "", [],
+                                     full, promo_disc, to_pay)
+    if promo_code:
+        await db.set_order_promo(order_id, promo_code)
+        await _consume_promo(promo_code, call.from_user.id)
+    await state.clear()
+    await call.answer()
+    order = await db.get_order(order_id)
+    await _fulfill(call.message, call.from_user.id, order, bot, paid_money=False, lang=lang)
+
+
+@router.callback_query(F.data == "locked")
+async def cb_locked(call: CallbackQuery):
+    lang = await _lang(call.from_user.id)
+    await call.answer(_tt(lang, "⭐️ Доступно только на Premium и Ultimate.", "⭐️ Available on Premium and Ultimate only."), show_alert=True)
+
+
+@router.callback_query(F.data.startswith("preok:"))
+async def cb_preorder_ok(call: CallbackQuery, bot: Bot, state: FSMContext):
+    from config import ADMIN_IDS, PREORDER_PROMISE_MIN, SALES_LOG_CHAT_ID
+    lang = await _lang(call.from_user.id)
+    rate = await _rate(lang)
+    _, plan, devices, period, region = call.data.split(":", 4)
+    devices = int(devices)
+    full = price_rub(plan, devices, period)
+
+    data = await state.get_data()
+    promo_code = data.get("promo_code")
+    promo_percent = data.get("promo_percent", 0)
+    if data.get("promo_ctx") != f"{plan}:{devices}:{period}":
+        promo_code, promo_percent = None, 0
+    promo_disc, promo_code, _eff = await _resolve_discount(call.from_user.id, full, promo_code, promo_percent, _switch_floor(data, plan))
+    to_pay = full - promo_disc
+
+    # вдруг сервер уже появился — тогда обычная выдача
+    reserved = await db.reserve_purchase(region, devices, call.from_user.id)
+    if reserved is not None:
+        bal = await db.get_balance(call.from_user.id)
+        config_ids = [c["id"] for c in reserved]
+        # баланса не хватает — держим появившийся сервер за пользователем
+        if bal < to_pay:
+            from config import ORDER_TTL_MIN
+            order_id = await db.create_order(call.from_user.id, plan, devices, period, region,
+                                             config_ids, full, promo_disc, to_pay)
+            if promo_code:
+                await db.set_order_promo(order_id, promo_code)
+            await state.update_data(pending={
+                "type": "order", "order_id": order_id,
+                "plan": plan, "devices": devices, "period": period, "region": region,
+                "promo_code": promo_code, "promo_percent": promo_percent,
+                "full": full, "promo_disc": promo_disc, "to_pay": to_pay,
+            })
+            await call.answer()
+            await _edit(call, texts.topup_hold(texts.money(to_pay, lang, rate),
+                                               texts.money(bal, lang, rate), ORDER_TTL_MIN, lang),
+                        balance_kb(lang))
+            return
+        if not await db.deduct_balance(call.from_user.id, to_pay):
+            await db.free_configs(config_ids)
+            await call.answer(_tt(lang, "Недостаточно средств.", "Not enough balance."), show_alert=True)
+            return
+        order_id = await db.create_order(call.from_user.id, plan, devices, period, region,
+                                         config_ids, full, promo_disc, to_pay)
+        if promo_code:
+            await db.set_order_promo(order_id, promo_code)
+            await _consume_promo(promo_code, call.from_user.id)
+        await state.clear()
+        await call.answer()
+        order = await db.get_order(order_id)
+        await _fulfill(call.message, call.from_user.id, order, bot, paid_money=False, lang=lang)
+        return
+
+    # сервера нет — оформляем предзаказ (но сначала убедимся, что хватает баланса)
+    bal = await db.get_balance(call.from_user.id)
+    if bal < to_pay:
+        await state.update_data(pending={
+            "type": "preorder",
+            "plan": plan, "devices": devices, "period": period, "region": region,
+            "promo_code": promo_code, "promo_percent": promo_percent,
+            "full": full, "promo_disc": promo_disc, "to_pay": to_pay,
+        })
+        await call.answer()
+        await _edit(call, texts.need_topup(texts.money(to_pay, lang, rate),
+                                           texts.money(bal, lang, rate), lang), balance_kb(lang))
+        return
+    if not await db.deduct_balance(call.from_user.id, to_pay):
+        await call.answer(_tt(lang, "Недостаточно средств.", "Not enough balance."), show_alert=True)
+        return
+    if promo_code:
+        await _consume_promo(promo_code, call.from_user.id)
+    po_id = await db.create_preorder(call.from_user.id, plan, devices, period, region,
+                                     full, promo_disc, to_pay, promo_code, lang)
+    await state.clear()
+    await call.answer()
+    await _edit(call, texts.preorder_created(PREORDER_PROMISE_MIN, lang), back_to_menu_kb(lang))
+
+    await _admin_preorder_alert(bot, call.from_user.id, region, plan, devices, period, to_pay, po_id)
+
+
+@router.callback_query(F.data == "resume")
+async def cb_resume(call: CallbackQuery, bot: Bot, state: FSMContext):
+    """Завершить отложенный заказ после пополнения баланса."""
+    from config import ADMIN_IDS, ORDER_TTL_MIN, PREORDER_PROMISE_MIN, SALES_LOG_CHAT_ID
+    lang = await _lang(call.from_user.id)
+    rate = await _rate(lang)
+    data = await state.get_data()
+    pending = data.get("pending")
+    if not pending:
+        await call.answer(_tt(lang, "Нечего завершать 🙂", "Nothing to complete 🙂"), show_alert=True)
+        return
+
+    plan = pending["plan"]
+    devices = int(pending["devices"])
+    period = pending["period"]
+    region = pending["region"]
+    full = pending["full"]
+    promo_disc = pending["promo_disc"]
+    to_pay = pending["to_pay"]
+    promo_code = pending.get("promo_code")
+
+    bal = await db.get_balance(call.from_user.id)
+    if bal < to_pay:
+        # всё ещё не хватает — снова на пополнение, заказ остаётся в ожидании
+        await call.answer()
+        await _edit(call, texts.topup_hold(texts.money(to_pay, lang, rate),
+                                           texts.money(bal, lang, rate), ORDER_TTL_MIN, lang),
+                    balance_kb(lang))
+        return
+
+    charged_msg = _tt(lang, f"💳 Списано с баланса: <b>{texts.money(to_pay, lang, rate)}</b>",
+                      f"💳 Charged from balance: <b>{texts.money(to_pay, lang, rate)}</b>")
+
+    # 0) Слот-подписка (многоустройственный тариф) — конфиги не бронируем, выдаём слоты
+    if pending["type"] == "slots":
+        if not await db.deduct_balance(call.from_user.id, to_pay):
+            await call.answer(_tt(lang, "Недостаточно средств.", "Not enough balance."), show_alert=True)
+            return
+        order_id = await db.create_order(call.from_user.id, plan, devices, period, "", [],
+                                         full, promo_disc, to_pay)
+        if promo_code:
+            await db.set_order_promo(order_id, promo_code)
+            await _consume_promo(promo_code, call.from_user.id)
+        await state.update_data(pending=None)
+        await call.answer()
+        await call.message.answer(charged_msg)
+        order = await db.get_order(order_id)
+        await _fulfill(call.message, call.from_user.id, order, bot, paid_money=False, lang=lang)
+        return
+
+    # 1) Заранее забронированный сервер ещё держится — просто оплачиваем
+    if pending["type"] == "order":
+        order = await db.get_order(pending["order_id"])
+        if order and order["status"] == "pending":
+            if not await db.deduct_balance(call.from_user.id, to_pay):
+                await call.answer(_tt(lang, "Недостаточно средств.", "Not enough balance."), show_alert=True)
+                return
+            if promo_code:
+                await _consume_promo(promo_code, call.from_user.id)
+            await state.update_data(pending=None)
+            await call.answer()
+            await call.message.answer(charged_msg)
+            await _fulfill(call.message, call.from_user.id, order, bot, paid_money=False, lang=lang)
+            return
+        # бронь истекла (заказ отменён по таймауту) — пробуем взять сервер заново ниже
+
+    # 2) Бронируем сервер заново (предзаказ или истёкшая бронь)
+    reserved = await db.reserve_purchase(region, devices, call.from_user.id)
+    if reserved is not None:
+        if not await db.deduct_balance(call.from_user.id, to_pay):
+            await db.free_configs([c["id"] for c in reserved])
+            await call.answer(_tt(lang, "Недостаточно средств.", "Not enough balance."), show_alert=True)
+            return
+        config_ids = [c["id"] for c in reserved]
+        order_id = await db.create_order(call.from_user.id, plan, devices, period, region,
+                                         config_ids, full, promo_disc, to_pay)
+        if promo_code:
+            await db.set_order_promo(order_id, promo_code)
+            await _consume_promo(promo_code, call.from_user.id)
+        await state.update_data(pending=None)
+        await call.answer()
+        order = await db.get_order(order_id)
+        await call.message.answer(charged_msg)
+        await _fulfill(call.message, call.from_user.id, order, bot, paid_money=False, lang=lang)
+        return
+
+    # 3) Сервера по-прежнему нет — оформляем предзаказ (баланс уже достаточен)
+    if not await db.deduct_balance(call.from_user.id, to_pay):
+        await call.answer(_tt(lang, "Недостаточно средств.", "Not enough balance."), show_alert=True)
+        return
+    if promo_code:
+        await _consume_promo(promo_code, call.from_user.id)
+    po_id = await db.create_preorder(call.from_user.id, plan, devices, period, region,
+                                     full, promo_disc, to_pay, promo_code, lang)
+    await state.update_data(pending=None)
+    await call.answer()
+    await _edit(call, texts.preorder_created(PREORDER_PROMISE_MIN, lang), back_to_menu_kb(lang))
+    await _admin_preorder_alert(bot, call.from_user.id, region, plan, devices, period, to_pay, po_id)
+
+
+async def deliver_preorder(bot: Bot, po: dict) -> bool:
+    """Бронирует свободный конфиг и выдаёт предзаказ клиенту. True — выдано."""
+    reserved = await db.reserve_purchase(po["region"], po["devices"], po["user_id"])
+    if reserved is None:
+        return False
+    lang = po.get("lang") or "ru"
+    config_ids = [c["id"] for c in reserved]
+    order_id = await db.create_order(po["user_id"], po["plan"], po["devices"], po["period"],
+                                     po["region"], config_ids, po["full_rub"], po["discount"], po["rub"])
+    if po.get("promo"):
+        await db.set_order_promo(order_id, po["promo"])
+    await db.set_preorder_status(po["id"], "fulfilled")
+
+    class _T:
+        async def answer(self, *a, **k):
+            await bot.send_message(po["user_id"], *a, **k)
+
+        async def answer_document(self, doc, caption=None):
+            await bot.send_document(po["user_id"], doc, caption=caption)
+
+        async def answer_photo(self, photo):
+            await bot.send_photo(po["user_id"], photo)
+
+    target = _T()
+    await target.answer(_tt(lang, "🎉 <b>Сервер готов!</b> Твой предзаказ выдан 👇",
+                            "🎉 <b>Server ready!</b> Here's your pre-order 👇"))
+    order = await db.get_order(order_id)
+    await _fulfill(target, po["user_id"], order, bot, paid_money=False, lang=lang)
+    # уведомляем админов, что предзаказ закрыт автоматически
+    u = await db.get_user(po["user_id"]) or {}
+    await _notify_admins(bot, texts.admin_preorder_delivered(
+        po["region"], po["user_id"],
+        username=u.get("username"), full_name=u.get("full_name"),
+    ))
+    return True
+
+
+async def refund_preorder(bot: Bot, po: dict):
+    await db.add_balance(po["user_id"], po["rub"])
+    await db.set_preorder_status(po["id"], "refunded")
+    lang = po.get("lang") or "ru"
+    rate = await _rate(lang)
+    try:
+        await bot.send_message(po["user_id"],
+                               texts.preorder_refunded(texts.money(po["rub"], lang, rate), lang),
+                               reply_markup=balance_kb(lang))
+    except Exception:
+        pass
+
+
+@router.callback_query(F.data.startswith("promoask:"))
+async def cb_promo_ask(call: CallbackQuery, state: FSMContext):
+    lang = await _lang(call.from_user.id)
+    _, plan, devices, period = call.data.split(":")
+    await state.set_state(PromoUser.waiting)
+    await state.update_data(promo_ctx=f"{plan}:{devices}:{period}")
+    await call.message.answer(_tt(lang,
+        "🎟 Пришли промокод одним сообщением (или /cancel).",
+        "🎟 Send your promo code in one message (or /cancel)."))
+    await call.answer()
+
+
+@router.message(PromoUser.waiting, Command("cancel"))
+async def cb_promo_cancel(message: Message, state: FSMContext):
+    lang = await _lang(message.from_user.id)
+    await state.set_state(None)
+    await message.answer(_tt(lang, "Отменено. Вернись к выбору сервера.", "Cancelled. Go back to server selection."))
+
+
+@router.message(PromoUser.waiting, F.text)
+async def cb_promo_apply(message: Message, state: FSMContext):
+    lang = await _lang(message.from_user.id)
+    rate = await _rate(lang)
+    code = message.text.strip()
+    promo = await db.get_promo(code)
+    data = await state.get_data()
+    ctx = data.get("promo_ctx", "")
+    if not promo:
+        await message.answer(_tt(lang, "❌ Промокод неверный или больше не действует.",
+                                 "❌ Invalid or expired promo code."))
+        return
+    # промокод на баланс (активируется на экране Баланс)
+    if ctx == "balance":
+        await state.clear()
+        if promo["kind"] != "balance":
+            await message.answer(_tt(lang, "ℹ️ Это промокод на скидку — введи его при покупке тарифа.",
+                                     "ℹ️ This is a discount promo — enter it during purchase."))
+            return
+        if await db.promo_redeemed_by(promo["code"], message.from_user.id):
+            await message.answer(texts.promo_already_used(lang), reply_markup=balance_kb(lang))
+            return
+        await db.add_balance(message.from_user.id, promo["amount_rub"])
+        await db.use_promo(promo["code"])
+        await db.record_promo_redemption(promo["code"], message.from_user.id)
+        bal = await db.get_balance(message.from_user.id)
+        await message.answer(texts.promo_balance_added(texts.money(promo["amount_rub"], lang, rate),
+                                                       texts.money(bal, lang, rate), lang),
+                             reply_markup=balance_kb(lang))
+        return
+    if promo["kind"] != "discount":
+        await message.answer(_tt(lang, "ℹ️ Это промокод на баланс. Активируй его на экране «💰 Баланс» → «🎟 Промокод».",
+                                 "ℹ️ This is a balance promo. Activate it on «💰 Balance» → «🎟 Promo code»."))
+        return
+    if await db.promo_redeemed_by(promo["code"], message.from_user.id):
+        await message.answer(texts.promo_already_used(lang))
+        return
+    await state.update_data(promo_code=promo["code"], promo_percent=promo["percent"])
+    await state.set_state(None)
+    try:
+        plan, devices, period = ctx.split(":")
+        devices = int(devices)
+    except Exception:
+        await message.answer(_tt(lang, "✅ Промокод принят. Вернись и выбери сервер.",
+                                 "✅ Promo accepted. Go back and pick a server."))
+        return
+    full = price_rub(plan, devices, period)
+    promo_disc = full * promo["percent"] // 100
+    regions = await db.regions_for_purchase()
+    await message.answer(_tt(lang, f"✅ Промокод <b>{promo['code']}</b>: −{promo['percent']}%",
+                             f"✅ Promo <b>{promo['code']}</b>: −{promo['percent']}%"))
+    if regions:
+        await message.answer(texts.order_summary(plan, devices, period, full, promo_disc, lang, rate),
+                             reply_markup=locations_kb(plan, devices, period, regions, lang))
+
+
+@router.callback_query(F.data == "promobal")
+async def cb_promo_balance_ask(call: CallbackQuery, state: FSMContext):
+    lang = await _lang(call.from_user.id)
+    await state.set_state(PromoUser.waiting)
+    await state.update_data(promo_ctx="balance")
+    await call.message.answer(_tt(lang, "🎟 Пришли промокод одним сообщением (или /cancel).",
+                                  "🎟 Send your promo code in one message (or /cancel)."))
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("buyloc:"))
+async def cb_buyloc(call: CallbackQuery, bot: Bot, state: FSMContext):
+    _, plan, devices, period, region = call.data.split(":", 4)
+    await _buyloc(call, bot, state, plan, int(devices), period, region)
+
+
+async def _buyloc(call: CallbackQuery, bot: Bot, state: FSMContext, plan, devices, period, region):
+    lang = await _lang(call.from_user.id)
+    rate = await _rate(lang)
+    devices = int(devices)
+    full = price_rub(plan, devices, period)
+
+    data = await state.get_data()
+    promo_code = data.get("promo_code")
+    promo_percent = data.get("promo_percent", 0)
+    if data.get("promo_ctx") != f"{plan}:{devices}:{period}":
+        promo_code, promo_percent = None, 0
+    promo_disc, promo_code, _eff = await _resolve_discount(call.from_user.id, full, promo_code, promo_percent, _switch_floor(data, plan))
+    to_pay = full - promo_disc
+
+    bal = await db.get_balance(call.from_user.id)
+
+    reserved = await db.reserve_purchase(region, devices, call.from_user.id)
+    if reserved is None:
+        # сервера нет — сразу предлагаем предзаказ (баланс проверим при подтверждении)
+        from config import PREORDER_PROMISE_MIN
+        kb = InlineKeyboardBuilder()
+        kb.button(text=_tt(lang, "✅ Да, оформить", "✅ Yes, place it"),
+                  callback_data=f"preok:{plan}:{devices}:{period}:{region}")
+        kb.button(text=_tt(lang, "⬅️ Отмена", "⬅️ Cancel"), callback_data="buy")
+        kb.adjust(1)
+        await call.answer()
+        await _edit(call, texts.preorder_offer(texts.region_name(region, lang), texts.money(to_pay, lang, rate),
+                                               PREORDER_PROMISE_MIN, lang), kb.as_markup())
+        return
+
+    # сервер есть, но баланса не хватает — ДЕРЖИМ его за пользователем (бронь),
+    # чтобы после пополнения он не потерял сервер и не увидел «нет серверов».
+    if bal < to_pay:
+        from config import ORDER_TTL_MIN
+        config_ids = [c["id"] for c in reserved]
+        order_id = await db.create_order(
+            call.from_user.id, plan, devices, period, region, config_ids, full, promo_disc, to_pay
         )
-        await db.commit()
-        return cur.lastrowid
+        if promo_code:
+            await db.set_order_promo(order_id, promo_code)
+        await state.update_data(pending={
+            "type": "order", "order_id": order_id,
+            "plan": plan, "devices": devices, "period": period, "region": region,
+            "promo_code": promo_code, "promo_percent": promo_percent,
+            "full": full, "promo_disc": promo_disc, "to_pay": to_pay,
+        })
+        await call.answer()
+        await _edit(call, texts.topup_hold(texts.money(to_pay, lang, rate),
+                                           texts.money(bal, lang, rate), ORDER_TTL_MIN, lang),
+                    balance_kb(lang))
+        return
+
+    if not await db.deduct_balance(call.from_user.id, to_pay):
+        await db.free_configs([c["id"] for c in reserved])
+        await call.answer(_tt(lang, "Недостаточно средств.", "Not enough balance."), show_alert=True)
+        return
+
+    config_ids = [c["id"] for c in reserved]
+    order_id = await db.create_order(
+        call.from_user.id, plan, devices, period, region, config_ids, full, promo_disc, to_pay
+    )
+    if promo_code:
+        await db.set_order_promo(order_id, promo_code)
+        await _consume_promo(promo_code, call.from_user.id)
+    await state.clear()
+    await call.answer()
+    order = await db.get_order(order_id)
+    await call.message.answer(_tt(lang, f"💳 Списано с баланса: <b>{texts.money(to_pay, lang, rate)}</b>",
+                                  f"💳 Charged from balance: <b>{texts.money(to_pay, lang, rate)}</b>"))
+    await _fulfill(call.message, call.from_user.id, order, bot, paid_money=False, lang=lang)
 
 
-async def get_report(report_id) -> dict | None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM config_reports WHERE id=?", (report_id,))
-        row = await cur.fetchone()
-        return dict(row) if row else None
+# ============ ВЫБОР СПОСОБА ОПЛАТЫ ============
+
+def _order_title(order: dict, lang: str) -> tuple[str, str]:
+    p = PLANS[order["plan"]]
+    title = f"{p['title']} · {texts.dev_title(order['devices'], lang)} · {texts.per_title(order['period'], lang)}"
+    rname = texts.region_name(order["region"], lang)
+    desc = _tt(lang, f"VPN-доступ ({rname}).", f"VPN access ({rname}).")
+    return title, desc
 
 
-async def set_report_status(report_id, status):
-    async with aiosqlite.connect(DB_PATH) as db:
-        resolved = iso(now()) if status in ("resolved", "rejected") else None
-        await db.execute(
-            "UPDATE config_reports SET status=?, resolved_at=? WHERE id=?",
-            (status, resolved, report_id),
+async def _offer_payment(target: Message, bot: Bot, user_id: int, order_id: int, lang: str):
+    order = await db.get_order(order_id)
+    to_pay = order["rub"]
+    if to_pay <= 0:
+        await target.answer(_tt(lang, "🎁 <b>Оплачено бонусным балансом!</b>", "🎁 <b>Paid with bonus balance!</b>"))
+        await _fulfill(target, user_id, order, bot, paid_money=False, lang=lang)
+        return
+    if PAYMENT_MODE != "choice":
+        await _do_payment(target, bot, user_id, order, PAYMENT_MODE, lang)
+        return
+
+    rate = await _rate(lang)
+    amount_str = texts.money(to_pay, lang, rate)
+
+    # для англоязычных: карта/СБП — российские методы, поэтому только крипта
+    if lang == "en":
+        await _do_payment(target, bot, user_id, order, "crypto", lang)
+        return
+
+    kb = InlineKeyboardBuilder()
+    kb.button(text="💳 Банковская карта", callback_data=f"pay:lava:{order_id}")
+    kb.button(text="⚡️ СБП", callback_data=f"pay:sbp:{order_id}")
+    kb.button(text="🪙 Криптовалюта", callback_data=f"pay:crypto:{order_id}")
+    kb.adjust(1)
+    await target.answer(
+        f"💰 <b>К оплате: {amount_str}</b>\n{texts.LINE}\nВыбери удобный способ оплаты 👇",
+        reply_markup=kb.as_markup(),
+    )
+
+
+@router.callback_query(F.data.startswith("pay:"))
+async def cb_pay(call: CallbackQuery, bot: Bot):
+    lang = await _lang(call.from_user.id)
+    _, method, order_id = call.data.split(":")
+    order = await db.get_order(int(order_id))
+    if not order or order["status"] == "paid":
+        await call.answer(_tt(lang, "Заказ уже обработан.", "Order already processed."), show_alert=True)
+        return
+    await call.answer()
+    await _do_payment(call.message, bot, call.from_user.id, order, method, lang)
+
+
+async def _do_payment(target: Message, bot: Bot, user_id: int, order: dict, method: str, lang: str):
+    title, desc = _order_title(order, lang)
+    to_pay = order["rub"]
+    order_id = order["id"]
+    rate = await _rate(lang)
+    amount_str = texts.money(to_pay, lang, rate)
+    err = _tt(lang, "⚠️ Не удалось создать счёт. Попробуй другой способ или напиши в поддержку.",
+              "⚠️ Couldn't create the invoice. Try another method or contact support.")
+    paid_btn = _tt(lang, "✅ Я оплатил — проверить", "✅ I paid — check")
+    steps_card = _tt(lang, "1️⃣ Нажми кнопку оплаты и заверши платёж\n2️⃣ Вернись и нажми «Я оплатил — проверить»",
+                     "1️⃣ Tap the pay button and finish the payment\n2️⃣ Come back and tap «I paid — check»")
+
+    if method in ("lava", "sbp", "card"):
+        try:
+            _iid, pay_url = await create_lava_invoice(order_id, to_pay, title)
+        except Exception as e:
+            log.exception("lava invoice error: %s", e)
+            await target.answer(err)
+            return
+        if method == "sbp":
+            label = _tt(lang, "⚡️ Оплатить через СБП", "⚡️ Pay via SBP")
+        else:
+            label = _tt(lang, "💳 Оплатить картой", "💳 Pay by card")
+        kb = InlineKeyboardBuilder()
+        kb.button(text=label, url=pay_url)
+        kb.button(text=paid_btn, callback_data=f"check_lava:{order_id}")
+        kb.adjust(1)
+        head = _tt(lang, f"💳 <b>Оплата {amount_str}</b>", f"💳 <b>Payment {amount_str}</b>")
+        await target.answer(f"{head}\n{texts.LINE}\n{steps_card}", reply_markup=kb.as_markup())
+        return
+
+    if method == "crypto":
+        try:
+            invoice_id, pay_url = await create_crypto_invoice(order_id, to_pay, title)
+        except Exception as e:
+            log.exception("crypto invoice error: %s", e)
+            await target.answer(err)
+            return
+        if not pay_url:
+            await target.answer(err)
+            return
+        kb = InlineKeyboardBuilder()
+        kb.button(text=_tt(lang, "🪙 Оплатить криптой", "🪙 Pay with crypto"), url=pay_url)
+        kb.button(text=paid_btn, callback_data=f"check_crypto:{invoice_id}:{order_id}")
+        kb.adjust(1)
+        head = _tt(lang, f"🪙 <b>Оплата {amount_str} криптовалютой</b>", f"🪙 <b>Payment {amount_str} in crypto</b>")
+        steps = _tt(lang, "1️⃣ Нажми «Оплатить криптой» и оплати в @CryptoBot\n2️⃣ Вернись и нажми «Я оплатил — проверить»",
+                    "1️⃣ Tap «Pay with crypto» and pay in @CryptoBot\n2️⃣ Come back and tap «I paid — check»")
+        await target.answer(f"{head}\n{texts.LINE}\n{steps}", reply_markup=kb.as_markup())
+        return
+
+    await bot.send_invoice(chat_id=user_id, **invoice_params(title, desc, f"order:{order_id}", to_pay))
+
+
+@router.callback_query(F.data.startswith("check_lava:"))
+async def check_lava_payment(call: CallbackQuery, bot: Bot):
+    lang = await _lang(call.from_user.id)
+    order_id = call.data.split(":", 1)[1]
+    try:
+        paid = await check_lava_invoice(int(order_id))
+    except Exception as e:
+        log.exception("lava check error: %s", e)
+        await call.answer(_tt(lang, "Не удалось проверить, попробуй ещё раз.", "Check failed, try again."), show_alert=True)
+        return
+    await _after_check(call, bot, paid, int(order_id), "LAVA", str(order_id), lang)
+
+
+@router.callback_query(F.data.startswith("check_crypto:"))
+async def check_crypto_payment(call: CallbackQuery, bot: Bot):
+    lang = await _lang(call.from_user.id)
+    _, invoice_id, order_id = call.data.split(":")
+    try:
+        paid = await check_crypto_invoice(int(invoice_id))
+    except Exception as e:
+        log.exception("crypto check error: %s", e)
+        await call.answer(_tt(lang, "Не удалось проверить, попробуй ещё раз.", "Check failed, try again."), show_alert=True)
+        return
+    await _after_check(call, bot, paid, int(order_id), "CRYPTO", str(invoice_id), lang)
+
+
+async def _after_check(call, bot, paid, order_id, method_name, ref, lang):
+    if not paid:
+        await call.answer(_tt(lang, "Оплата пока не найдена. Подожди минуту и нажми снова.",
+                              "Payment not found yet. Wait a minute and tap again."), show_alert=True)
+        return
+    order = await db.get_order(order_id)
+    if not order or order["status"] == "paid":
+        await call.answer(_tt(lang, "Заказ уже обработан ✅", "Order already processed ✅"), show_alert=True)
+        return
+    await call.answer(_tt(lang, "Оплата найдена ✅", "Payment found ✅"), show_alert=True)
+    await db.record_payment(call.from_user.id, order["id"], order["rub"], method_name, ref)
+    await _fulfill(call.message, call.from_user.id, order, bot, paid_money=True, lang=lang)
+
+
+# ============ Stars / ЮKassa ============
+
+@router.pre_checkout_query()
+async def pre_checkout(pcq: PreCheckoutQuery):
+    await pcq.answer(ok=True)
+
+
+@router.message(F.successful_payment)
+async def on_paid(message: Message, bot: Bot):
+    lang = await _lang(message.from_user.id)
+    sp = message.successful_payment
+    _, _, raw = sp.invoice_payload.partition(":")
+    order = await db.get_order(int(raw))
+    if not order or order["status"] == "paid":
+        return
+    await db.record_payment(message.from_user.id, order["id"], sp.total_amount, sp.currency,
+                            sp.telegram_payment_charge_id)
+    await _fulfill(message, message.from_user.id, order, bot, paid_money=True, lang=lang)
+
+
+# ============ ВЫДАЧА ============
+
+async def _fulfill(target: Message, user_id: int, order: dict, bot: Bot, paid_money: bool, lang: str = "ru", source: str = "bot"):
+    await db.set_order_status(order["id"], "paid")
+
+    await db.log_event(user_id, "order_paid", amount=order.get("rub"),
+                        meta={"plan": order.get("plan"), "devices": order.get("devices"),
+                              "period": order.get("period"), "region": order.get("region"),
+                              "order_id": order.get("id"), "discount": order.get("discount")},
+                        source=source)
+
+    if order.get("discount", 0) > 0:
+        await db.use_ref_balance(user_id, order["discount"])
+
+    config_ids = [int(x) for x in order["config_ids"].split(",") if x]
+    total = len(config_ids)
+
+    # Слот-заказ (многоустройственный тариф): конфигов нет — выдаём подписку со слотами,
+    # устройства клиент активирует по одному в «Мои подключения».
+    if total == 0:
+        sub_id = await db.create_subscription(
+            user_id,
+            order["plan"],
+            order["devices"],
+            order["period"]
         )
-        await db.commit()
-
-
-async def recent_reports_count(user_id, config_id, hours=24) -> int:
-    cutoff = iso(now() - timedelta(hours=hours))
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "SELECT COUNT(*) FROM config_reports WHERE user_id=? AND config_id=? AND created_at>=?",
-            (user_id, config_id, cutoff),
+        await target.answer(
+            texts.sub_created(order["devices"], lang),
+            reply_markup=main_menu_kb(lang)
         )
-        return (await cur.fetchone())[0]
+
+        if paid_money:
+            if order.get("promo"):
+                await _consume_promo(order["promo"], user_id)
+            await _reward_referrer(user_id, order["full_rub"], bot)
+            await _sales_log(bot, user_id, order)
+
+        return
+
+    for idx, cid in enumerate(config_ids, start=1):
+        expires = await db.mark_sold(cid, user_id, order["plan"], order["period"])
+
+    from config import WEBAPP_URL
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import WebAppInfo
+    kb = InlineKeyboardBuilder()
+    kb.button(
+        text=_tt(lang, "📲 Открыть мини апп", "📲 Open app"),
+        web_app=WebAppInfo(url=WEBAPP_URL)
+    )
+    await target.answer(
+        _tt(lang,
+            "✅ <b>Готово!</b> Твой конфиг доступен в приложении 👇",
+            "✅ <b>Done!</b> Your config is available in the app 👇"),
+        reply_markup=kb.as_markup()
+    )
+
+    if order.get("period") == "trial":
+        await db.mark_trial_used(user_id)
+
+    applied, _region = await db.apply_bonus(user_id)
+
+    if applied:
+        await target.answer(
+            _tt(
+                lang,
+                f"🎁 К твоей подписке добавлено <b>{applied}</b> бонусных дней!",
+                f"🎁 <b>{applied}</b> bonus days added to your subscription!"
+            )
+        )
+
+    if paid_money:
+        if order.get("promo"):
+            await _consume_promo(order["promo"], user_id)
+        await _reward_referrer(user_id, order["full_rub"], bot)
+        await _sales_log(bot, user_id, order)
 
 
-async def manual_replace_config(old_id, config_text) -> dict | None:
-    """Ручная замена: старый конфиг выводится из оборота ('replaced'), вместо него
-    создаётся новый (введённый админом текстом/файлом) с тем же сроком и владельцем."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        await db.execute("BEGIN IMMEDIATE")
-        cur = await db.execute("SELECT * FROM configs WHERE id=?", (old_id,))
-        old = await cur.fetchone()
-        if not old:
-            await db.commit()
-            return None
-        old = dict(old)
-        cur = await db.execute(
-            "INSERT INTO configs(region, config_text, is_premium, is_trial, status, config_type, "
-            "user_id, plan, period, source, created_at, sold_at, expires_at) "
-            "VALUES(?,?,?,0,'sold',?,?,?,?, 'manual_admin', ?, ?, ?)",
-            (old["region"], config_text, old["is_premium"], old["config_type"],
-             old["user_id"], old["plan"], old["period"], iso(now()), iso(now()), old["expires_at"]),
+async def _reward_referrer(buyer_id: int, full_rub: int, bot: Bot):
+    buyer = await db.get_user(buyer_id)
+    ref_id = buyer and buyer.get("referred_by")
+
+    if not ref_id:
+        return
+
+    rlang = await db.get_lang(ref_id)
+    cashback = full_rub * REF_PERCENT // 100
+
+    if cashback > 0:
+        # 15% идёт на выводимый реферальный баланс (реальные деньги)
+        await db.add_ref_cash(ref_id, cashback)
+
+    await db.add_bonus_days(ref_id, REF_REWARD_DAYS)
+    applied, region = await db.apply_bonus(ref_id)
+    region_disp = texts.region_name(region, rlang)
+
+    try:
+        if rlang == "en":
+            msg = ["🎉 Your friend topped up / bought!"]
+
+            if cashback > 0:
+                msg.append(f"💰 +{cashback} ₽ to your withdrawable balance")
+
+            msg.append(
+                f"🎁 +{applied} days to subscription ({region_disp})"
+                if applied
+                else f"🎁 +{REF_REWARD_DAYS} bonus days (applied on purchase)"
+            )
+        else:
+            msg = ["🎉 Твой друг пополнил баланс / купил!"]
+
+            if cashback > 0:
+                msg.append(f"💰 +{cashback} ₽ на выводимый баланс")
+
+            msg.append(
+                f"🎁 +{applied} дней к подписке ({region_disp})"
+                if applied
+                else f"🎁 +{REF_REWARD_DAYS} бонусных дней (добавятся при покупке)"
+            )
+
+        await bot.send_message(ref_id, "\n".join(msg))
+
+    except Exception:
+        pass
+
+    await _check_ref_milestones(ref_id, rlang, bot)
+
+
+async def _check_ref_milestones(ref_id: int, rlang: str, bot: Bot):
+    """Разовые бонусы за число приглашённых (5/10/25/50...)."""
+    try:
+        st = await db.referral_stats(ref_id)
+        invited = st.get("invited", 0)
+        already = await db.get_ref_milestone(ref_id)
+        highest = already
+
+        for threshold, bonus in sorted(REF_MILESTONES):
+            if invited >= threshold > already:
+                await db.add_ref_cash(ref_id, bonus)
+                highest = max(highest, threshold)
+
+                try:
+                    await bot.send_message(
+                        ref_id,
+                        texts.ref_milestone_msg(threshold, bonus, rlang)
+                    )
+                except Exception:
+                    pass
+
+        if highest > already:
+            await db.set_ref_milestone(ref_id, highest)
+
+    except Exception:
+        pass
+
+
+async def _sales_log(bot: Bot, user_id: int, order: dict):
+    if not SALES_LOG_CHAT_ID:
+        return
+
+    try:
+        p = PLANS.get(order["plan"], {})
+        title = p.get("title", order["plan"])
+        promo = f" · 🎟{order['promo']}" if order.get("promo") else ""
+
+        text = (
+            f"💰 <b>Продажа</b>\n"
+            f"Тариф: {title} · {order['devices']} устр · {order['period']}\n"
+            f"Регион: {order['region']}\n"
+            f"Сумма: {order['rub']} ₽{promo}\n"
+            f"Покупатель: <code>{user_id}</code>"
         )
-        new_id = cur.lastrowid
-        await db.execute("UPDATE configs SET status='replaced' WHERE id=?", (old_id,))
-        await db.execute(
-            "INSERT INTO replacements(user_id, old_id, new_id, region, reason, old_source, created_at) "
-            "VALUES(?,?,?,?,?,?,?)",
-            (old["user_id"], old_id, new_id, old["region"], "manual_admin", old.get("source"), iso(now())),
+
+        await bot.send_message(SALES_LOG_CHAT_ID, text)
+
+    except Exception:
+        pass
+
+
+# ============ ВЫДАЧА ============
+
+_VLESS_INLINE_LIMIT = 3500  # запас от лимита Telegram (4096) под HTML-экранирование
+
+
+def _vless_caption(region: str, expires, idx: int, total: int, lang: str) -> str:
+    return texts.vless_delivery_caption(flag(region), texts.region_name(region, lang),
+                                        expires.strftime("%d.%m.%Y %H:%M UTC"), idx, total, lang)
+
+
+def _vless_howto(lang: str) -> str:
+    if lang == "en":
+        return (
+            f"{texts.LINE}\n"
+            "📲 <b>Setup — happ app</b>\n"
+            f"{texts.LINE}\n"
+            "1️⃣  Tap the config below to copy it\n"
+            "2️⃣  Open the <b>happ</b> app\n"
+            "3️⃣  Tap <b>➕</b> in the top right corner\n"
+            "4️⃣  Choose <b>Import from clipboard</b>\n"
+            f"{texts.LINE}\n"
+            "✨ Done — you're connected!"
         )
-        await db.commit()
-        cur = await db.execute("SELECT * FROM configs WHERE id=?", (new_id,))
-        new = dict(await cur.fetchone())
-        new["old_source"] = old.get("source")
-        return new
+    return (
+        f"{texts.LINE}\n"
+        "📲 <b>Настройка — приложение happ</b>\n"
+        f"{texts.LINE}\n"
+        "1️⃣  Нажми на конфиг ниже, чтобы скопировать\n"
+        "2️⃣  Открой приложение <b>happ</b>\n"
+        "3️⃣  Нажми <b>➕</b> в правом верхнем углу\n"
+        "4️⃣  Выбери <b>Import from clipboard</b>\n"
+        f"{texts.LINE}\n"
+        "✨ Готово — ты подключён!"
+    )
+
+
+def _vless_copy_hint(lang: str) -> str:
+    return _tt(lang, "👇 <b>Твой конфиг</b> — нажми, чтобы скопировать",
+              "👇 <b>Your config</b> — tap to copy")
+
+
+def _vless_fits_inline(text: str) -> bool:
+    return len(text) <= _VLESS_INLINE_LIMIT
+
+
+async def _send_vless_config_to(bot: Bot, user_id: int, cfg: dict, exp, lang: str = "ru"):
+    region = cfg["region"]
+    text = cfg["config_text"]
+    caption = _vless_caption(region, exp, 1, 1, lang)
+    await bot.send_message(user_id, f"{caption}\n\n{_vless_howto(lang)}")
+    if _vless_fits_inline(text):
+        await bot.send_message(user_id, f"{_vless_copy_hint(lang)}\n<code>{_html.escape(text)}</code>")
+    else:
+        filename = f"{texts.region_slug(region)}_{cfg['id']}.json"
+        await bot.send_document(user_id, BufferedInputFile(text.encode(), filename=filename),
+                                caption=_vless_copy_hint(lang))
+
+
+async def _send_vless_config(target: Message, cfg: dict, expires, idx, total, lang="ru"):
+    region = cfg["region"]
+    text = cfg["config_text"]
+    caption = _vless_caption(region, expires, idx, total, lang)
+    await target.answer(f"{caption}\n\n{_vless_howto(lang)}")
+    if _vless_fits_inline(text):
+        await target.answer(f"{_vless_copy_hint(lang)}\n<code>{_html.escape(text)}</code>")
+    else:
+        filename = f"{texts.region_slug(region)}_{cfg['id']}.json"
+        await target.answer_document(BufferedInputFile(text.encode(), filename=filename),
+                                     caption=_vless_copy_hint(lang))
+    # Видео-инструкция по подключению
+    from config import CONNECT_VIDEO_FILE_ID
+    if CONNECT_VIDEO_FILE_ID:
+        caption_vid = _tt(lang,
+            "📹 Видео-инструкция по подключению через happ",
+            "📹 Video guide: how to connect via happ")
+        await target.answer_video(CONNECT_VIDEO_FILE_ID, caption=caption_vid)
+
+                                     
+
+async def _send_config(target: Message, cfg: dict, expires, idx: int, total: int, lang: str = "ru"):
+    """Диспетчер выдачи: VLESS (happ) или WireGuard (.conf + QR)."""
+    ctype = cfg.get("config_type") or "wireguard"
+    if ctype == "vless":
+        await _send_vless_config(target, cfg, expires, idx, total, lang)
+        return
+
+    region = cfg["region"]
+    text = cfg["config_text"]
+    caption = texts.delivery_caption(
+        flag(region), texts.region_name(region, lang),
+        expires.strftime("%d.%m.%Y %H:%M UTC"), idx, total, lang,
+    )
+    filename = f"{texts.region_slug(region)}_{cfg['id']}.conf"
+    await target.answer_document(
+        BufferedInputFile(text.encode(), filename=filename),
+        caption=caption,
+    )
+    try:
+        qr_bytes = make_qr_png(text)
+        await target.answer_photo(BufferedInputFile(qr_bytes, filename="qr.png"))
+    except Exception:
+        pass
+        
+async def send_config_to(bot: Bot, user_id: int, cfg: dict, lang: str = "ru"):
+    """Публичная обёртка для handlers_admin.py: отправляет конфиг конкретному
+    user_id напрямую через Bot API (используется при одобрении смены региона,
+    авто- и ручной замене конфига по жалобе из мини-аппа)."""
+
+    class _DirectTarget:
+        async def answer(self, *a, **kw):
+            return await bot.send_message(user_id, *a, **kw)
+
+        async def answer_document(self, document, caption=None, **kw):
+            return await bot.send_document(user_id, document, caption=caption, **kw)
+
+        async def answer_photo(self, photo, caption=None, **kw):
+            return await bot.send_photo(user_id, photo, caption=caption, **kw)
+
+    target = _DirectTarget()
+    try:
+        exp = datetime.fromisoformat((cfg.get("expires_at") or "").replace("Z", ""))
+    except (ValueError, TypeError):
+        exp = datetime.utcnow()
+    await _send_config(target, cfg, exp, 1, 1, lang)
+
+# ============ МОИ ПОДКЛЮЧЕНИЯ ============
+
+@router.callback_query(F.data.startswith("getcfg:"))
+async def cb_get_config(call: CallbackQuery):
+    lang = await _lang(call.from_user.id)
+    from config import WEBAPP_URL
+    from aiogram.types import WebAppInfo
+    kb = InlineKeyboardBuilder()
+    kb.button(
+        text=_tt(lang, "📲 Открыть мини апп", "📲 Open app"),
+        web_app=WebAppInfo(url=WEBAPP_URL)
+    )
+    await call.answer()
+    await call.message.answer(
+        _tt(lang,
+            "📁 Твой конфиг доступен в приложении 👇",
+            "📁 Your config is available in the app 👇"),
+        reply_markup=kb.as_markup()
+    )
+
+
+@router.message(Command("myconfigs"))
+async def cmd_my(message: Message):
+    lang = await _lang(message.from_user.id)
+    await _show_my(message, message.from_user.id, lang)
+
+
+@router.callback_query(F.data == "my")
+async def cb_my(call: CallbackQuery):
+    lang = await _lang(call.from_user.id)
+    await call.answer()
+    await _show_my(call.message, call.from_user.id, lang)
+
+
+async def _show_my(message: Message, user_id: int, lang: str):
+    subs = await db.user_subscriptions(user_id)
+    configs = await db.user_configs(user_id)
+    active_configs = [c for c in configs if c["status"] == "sold"]
+    latest_sub = subs[0] if subs else None
+    free_subs = [latest_sub] if (latest_sub and latest_sub["free_slots"] > 0) else []
+    if not free_subs and not active_configs:
+        await message.answer(_tt(lang, "📁 У тебя пока нет активных подключений.",
+                                 "📁 You have no active connections yet."),
+                             reply_markup=back_to_menu_kb(lang))
+        return
+    for s in free_subs:
+        await message.answer(texts.sub_slot_block(s, lang),
+                             reply_markup=sub_activate_kb(s["id"], s["free_slots"], lang))
+    if active_configs:
+        await message.answer(_tt(lang, "📁 <b>Твои подключения:</b>", "📁 <b>Your connections:</b>"))
+        for cfg in active_configs:
+            exp = cfg["expires_at"][:10] if cfg["expires_at"] else "—"
+            until = _tt(lang, "до", "until")
+            plan_label = cfg.get("plan") or "standard"
+            ctype = cfg.get("config_type") or "wireguard"
+            await message.answer(
+                f"{flag(cfg['region'])} <b>{texts.region_name(cfg['region'], lang)}</b>\n"
+                f"⏳ {until}: <code>{exp}</code> · {plan_label} · 🟢 ACTIVE",
+                reply_markup=connection_kb(cfg["id"], lang, ctype),
+            )
+
+
+# ============ ИНСТРУКЦИИ ============
+
+@router.callback_query(F.data == "howto")
+async def cb_howto(call: CallbackQuery):
+    lang = await _lang(call.from_user.id)
+    await _edit(call, texts.howto_intro(lang), howto_kb(lang))
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("guide:"))
+async def cb_guide(call: CallbackQuery):
+    lang = await _lang(call.from_user.id)
+    platform = call.data.split(":", 1)[1]
+
+    if platform == "video":
+        from config import CONNECT_VIDEO_FILE_ID
+        if CONNECT_VIDEO_FILE_ID:
+            caption = _tt(lang, "📹 Видео-инструкция по подключению через happ",
+                               "📹 Video guide: how to connect via happ")
+            await call.message.answer_video(CONNECT_VIDEO_FILE_ID, caption=caption)
+        await call.answer()
+        return
+
+    await _edit(call, texts.guide(platform, lang), guide_back_kb(lang))
+    await call.answer()
+# ============ ПРОДЛЕНИЕ ============
+
+@router.callback_query(F.data.startswith("renew:"))
+async def cb_renew(call: CallbackQuery, bot: Bot):
+    lang = await _lang(call.from_user.id)
+    rate = await _rate(lang)
+    config_id = int(call.data.split(":", 1)[1])
+    cfg = await db.get_config(config_id)
+    if not cfg or cfg["user_id"] != call.from_user.id:
+        await call.answer(_tt(lang, "Конфиг не найден 😔", "Config not found 😔"), show_alert=True)
+        return
+    plan = cfg["plan"] or "standard"
+    period = cfg["period"] if cfg["period"] in ("month", "year") else "month"
+    full = price_rub(plan, 1, period)
+    loy = await _loyalty_pct(call.from_user.id)
+    to_pay = full - full * loy // 100
+
+    bal = await db.get_balance(call.from_user.id)
+    if bal < to_pay:
+        await call.answer()
+        await _edit(call, texts.need_topup(texts.money(to_pay, lang, rate),
+                                           texts.money(bal, lang, rate), lang), balance_kb(lang))
+        return
+    if not await db.deduct_balance(call.from_user.id, to_pay):
+        await call.answer(_tt(lang, "Недостаточно средств.", "Not enough balance."), show_alert=True)
+        return
+
+    order_id = await db.create_order(
+        call.from_user.id, plan, 1, period, cfg["region"], [config_id], full, 0, to_pay
+    )
+    await call.answer()
+    order = await db.get_order(order_id)
+    await call.message.answer(_tt(lang, f"💳 Списано с баланса: <b>{texts.money(to_pay, lang, rate)}</b>",
+                                  f"💳 Charged from balance: <b>{texts.money(to_pay, lang, rate)}</b>"))
+    await _fulfill(call.message, call.from_user.id, order, bot, paid_money=False, lang=lang)
+
+
+# ============ АВТОПРОДЛЕНИЕ (фоновое) ============
+
+async def auto_renew(bot: Bot, cfg: dict) -> bool:
+    """Пытается автоматически продлить подписку cfg с баланса пользователя."""
+    user_id = cfg["user_id"]
+    plan = cfg["plan"] or "standard"
+    period = cfg["period"] if cfg["period"] in ("month", "year") else "month"
+    full = price_rub(plan, 1, period)
+    loy = loyalty_percent_for(await db.total_spent(user_id))
+    to_pay = full - full * loy // 100
+    lang = await db.get_lang(user_id)
+    rate = await _rate(lang)
+
+    if not await db.deduct_balance(user_id, to_pay):
+        # не хватило баланса — помечаем, чтобы не дёргать каждый цикл, и зовём продлить вручную
+        await db.mark_renew_notified(cfg["id"])
+        try:
+            await bot.send_message(
+                user_id,
+                texts.autorenew_failed(texts.region_name(cfg["region"], lang),
+                                       texts.money(to_pay, lang, rate), lang),
+                reply_markup=renew_kb(cfg["id"], lang),
+            )
+        except Exception:
+            pass
+        return False
+
+    new_exp = await db.extend_config(cfg["id"], PERIOD_DAYS[period])
+    try:
+        await bot.send_message(
+            user_id,
+            texts.autorenew_done(texts.region_name(cfg["region"], lang),
+                                 texts.money(to_pay, lang, rate),
+                                 new_exp.strftime("%d.%m.%Y %H:%M UTC"), lang),
+        )
+    except Exception:
+        pass
+    if SALES_LOG_CHAT_ID:
+        try:
+            await bot.send_message(
+                SALES_LOG_CHAT_ID,
+                f"🔁 <b>Автопродление</b>\nРегион: {cfg['region']}\n"
+                f"Сумма: {to_pay} ₽\nПользователь: <code>{user_id}</code>",
+            )
+        except Exception:
+            pass
+    return True
+
+
+# ============ ЗАМЕНА КОНФИГА ============
+
+_REASON_RU = {
+    "dead": "🚫 не работает / не подключается",
+    "slow": "🐢 медленно / нестабильно",
+    "blocked": "📱 заблокировал провайдер",
+    "country": "🌍 смена страны",
+    "other": "✍️ другое",
+}
+
+
+@router.callback_query(F.data.startswith("rep:"))
+async def cb_replace(call: CallbackQuery):
+    lang = await _lang(call.from_user.id)
+    config_id = int(call.data.split(":", 1)[1])
+    cfg = await db.get_config(config_id)
+    if not cfg or cfg["user_id"] != call.from_user.id or cfg["status"] != "sold":
+        await call.answer(_tt(lang, "Активный конфиг не найден 😔", "Active config not found 😔"), show_alert=True)
+        return
+    await _edit(call, _tt(lang,
+        "🔁 <b>Замена конфига</b>\n\nЧто случилось? Это поможет нам выдать тебе рабочий вариант:",
+        "🔁 <b>Replace config</b>\n\nWhat happened? This helps us give you a working one:"),
+        replace_reasons_kb(config_id, lang))
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("repr:"))
+async def cb_replace_reason(call: CallbackQuery, bot: Bot):
+    lang = await _lang(call.from_user.id)
+    _, cid, reason = call.data.split(":")
+    config_id = int(cid)
+    cfg = await db.get_config(config_id)
+    if not cfg or cfg["user_id"] != call.from_user.id or cfg["status"] != "sold":
+        await call.answer(_tt(lang, "Активный конфиг не найден 😔", "Active config not found 😔"), show_alert=True)
+        return
+
+    if reason == "country":
+        # Смена страны — только через одобрение админа. Сразу регион не выдаём.
+        req_id = await db.create_region_change(call.from_user.id, config_id, cfg["region"])
+        u = await db.get_user(call.from_user.id) or {}
+        kb = InlineKeyboardBuilder()
+        kb.button(text="✅ Одобрить", callback_data=f"rcq:ok:{req_id}")
+        kb.button(text="❌ Отклонить", callback_data=f"rcq:no:{req_id}")
+        kb.button(text="👤 Карточка", callback_data=f"acard:{call.from_user.id}")
+        kb.adjust(2, 1)
+        await _notify_admins(bot, texts.admin_region_change(
+            call.from_user.id, config_id, cfg["region"],
+            username=u.get("username"), full_name=u.get("full_name")),
+            reply_markup=kb.as_markup())
+        await _edit(call, texts.region_change_requested(lang), back_to_menu_kb(lang))
+        await call.answer()
+        return
+
+    # та же страна — выдаём другой конфиг из склада
+    await _do_replace(call, bot, config_id, cfg["region"], reason, lang)
+
+
+@router.callback_query(F.data.startswith("repc:"))
+async def cb_replace_country(call: CallbackQuery, bot: Bot):
+    lang = await _lang(call.from_user.id)
+    _, cid, region = call.data.split(":", 2)
+    config_id = int(cid)
+    cfg = await db.get_config(config_id)
+    if not cfg or cfg["user_id"] != call.from_user.id or cfg["status"] != "sold":
+        await call.answer(_tt(lang, "Активный конфиг не найден 😔", "Active config not found 😔"), show_alert=True)
+        return
+    await _do_replace(call, bot, config_id, region, "country", lang)
+
+
+async def _do_replace(call: CallbackQuery, bot: Bot, config_id: int, region: str, reason: str, lang: str):
+    new = await db.replace_config(config_id, region, reason)
+    if not new:
+        await call.answer()
+        await _edit(call, _tt(lang,
+            f"😔 В регионе сейчас нет свободных конфигов для замены. "
+            f"Попробуй другую страну или загляни чуть позже.",
+            f"😔 No free configs to replace right now. Try another country or check back later."),
+            replace_reasons_kb(config_id, lang))
+        # сообщим админам, что нужен запас под замену
+        for admin_id in ADMIN_IDS:
+            try:
+                await bot.send_message(admin_id,
+                    f"⚠️ Замена не удалась: нет свободных в <b>{region}</b>. Клиент ждёт замену.")
+            except Exception:
+                pass
+        return
+
+    await call.answer(_tt(lang, "Готово! Выдаю новый конфиг.", "Done! Sending a new config."))
+    try:
+        exp = datetime.fromisoformat(new["expires_at"]) if new.get("expires_at") else db.now()
+    except (ValueError, TypeError):
+        exp = db.now()
+    from config import WEBAPP_URL
+    from aiogram.types import WebAppInfo
+    kb = InlineKeyboardBuilder()
+    kb.button(
+        text=_tt(lang, "📲 Открыть мини апп", "📲 Open app"),
+        web_app=WebAppInfo(url=WEBAPP_URL)
+    )
+    await _edit(call, _tt(lang, "✅ <b>Конфиг заменён!</b> Открой приложение 👇",
+                          "✅ <b>Config replaced!</b> Open the app 👇"),
+                kb.as_markup())
+
+    # пинг админу: какой аккаунт-источник дал плохой конфиг
+    src = new.get("old_source") or "не указан"
+    reason_txt = _REASON_RU.get(reason, reason)
+    note = ""
+    if new.get("old_region") and new["old_region"] != region:
+        note = f"\n🌍 Страна изменена: {new['old_region']} → {region}"
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot.send_message(admin_id,
+                f"🔁 <b>Замена конфига</b>\n"
+                f"Клиент: <code>{call.from_user.id}</code>\n"
+                f"Старый #{config_id} ({new.get('old_region')}) · аккаунт-источник: <b>{src}</b>\n"
+                f"Причина: {reason_txt}{note}\n"
+                f"Выдан новый #{new['id']} ({region}).\n"
+                f"<i>Замени испорченный конфиг на аккаунте «{src}» в WireCat.</i>")
+        except Exception:
+            pass
