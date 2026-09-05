@@ -731,6 +731,45 @@
       <span class="pill"><span class="pill-dot"></span>Серверы онлайн</span>
       <span class="pill gold" onclick="handleTrial()"><svg class="icon" style="width:12px;height:12px;"><use href="#i-gift"/></svg>3 дня бесплатно</span>
     </div>
+
+    <div class="promo-banner-block" id="promoBannerBlock" style="margin:20px 16px 0;">
+  <div style="position:relative;background:linear-gradient(135deg,#3b1272 0%,#7c3aed 60%,#b794ff 100%);
+              border-radius:20px;padding:20px;overflow:hidden;box-shadow:0 14px 40px -16px rgba(124,58,237,0.55);">
+    <div style="position:absolute;right:-30px;top:-30px;width:150px;height:150px;
+                background:radial-gradient(circle, rgba(255,255,255,0.18), transparent 70%);"></div>
+    <div style="position:relative;">
+      <div style="display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;
+                  font-family:var(--mono);letter-spacing:1px;text-transform:uppercase;color:#fde68a;
+                  background:rgba(0,0,0,0.18);padding:4px 10px;border-radius:100px;margin-bottom:12px;">
+        🔥 Акция · Год со скидкой
+      </div>
+      <div style="font-size:19px;font-weight:900;color:#fff;margin-bottom:4px;letter-spacing:-0.3px;">
+        Standard на 1 год — от 199 ₽
+      </div>
+      <div style="font-size:12.5px;color:rgba(255,255,255,0.75);margin-bottom:16px;">
+        Успей купить год VPN по спеццене
+      </div>
+      <div style="display:flex;gap:8px;">
+        <div class="promo-opt" onclick="selectPromoYear(1)"
+             style="flex:1;text-align:center;background:rgba(255,255,255,0.14);border-radius:12px;padding:10px 4px;cursor:pointer;">
+          <div style="font-size:15px;font-weight:900;font-family:var(--mono);color:#fff;">199 ₽</div>
+          <div style="font-size:10px;color:rgba(255,255,255,0.7);margin-top:2px;">1 устройство</div>
+        </div>
+        <div class="promo-opt" onclick="selectPromoYear(2)"
+             style="flex:1;text-align:center;background:rgba(255,255,255,0.14);border-radius:12px;padding:10px 4px;cursor:pointer;">
+          <div style="font-size:15px;font-weight:900;font-family:var(--mono);color:#fff;">379 ₽</div>
+          <div style="font-size:10px;color:rgba(255,255,255,0.7);margin-top:2px;">2 устройства</div>
+        </div>
+        <div class="promo-opt" onclick="selectPromoYear(4)"
+             style="flex:1;text-align:center;background:rgba(255,255,255,0.14);border-radius:12px;padding:10px 4px;cursor:pointer;">
+          <div style="font-size:15px;font-weight:900;font-family:var(--mono);color:#fff;">699 ₽</div>
+          <div style="font-size:10px;color:rgba(255,255,255,0.7);margin-top:2px;">4 устройства</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
   </div>
 
   <div class="section-label">Выбери тариф</div>
@@ -2211,6 +2250,23 @@ function renderRegions() {
             </div>`;
   }).join('');
 }
+
+// ══════════════════════ ПРОМО: ГОД СО СКИДКОЙ (легко отключается) ══════════════════════
+const PROMO_ENABLED = true; // ← поставьте false, чтобы полностью убрать баннер акции
+
+function selectPromoYear(devices) {
+  selectTariff('standard');
+  selectDevices(devices);
+  selectPeriod('year');
+  document.getElementById('screen-shop').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  showToast('Standard · 1 год · ' + devices + ' устр. выбрано ниже — жми «Оплатить»');
+  tg?.HapticFeedback?.impactOccurred('medium');
+}
+
+(function initPromoBanner() {
+  const el = document.getElementById('promoBannerBlock');
+  if (el) el.style.display = PROMO_ENABLED ? '' : 'none';
+})();
 
 function renderTopupChips() {
   document.getElementById('topupChips').innerHTML = CONFIG.topupPresets.map(v =>
