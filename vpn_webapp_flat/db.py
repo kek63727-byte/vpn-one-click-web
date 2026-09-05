@@ -914,6 +914,30 @@ async def reserve_trial(region, user_id) -> list[dict] | None:
     return await _reserve(region, 1, user_id, "AND is_trial=1", "id")
 
 
+async def reserve_random(n, user_id) -> list[dict] | None:
+    """Бронь n свободных платных (не триал) конфигов из ЛЮБЫХ регионов,
+    выбранных случайно — используется для акций с миксом стран."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        await db.execute("BEGIN IMMEDIATE")
+        cur = await db.execute(
+            "SELECT * FROM configs WHERE status='free' AND is_trial=0 "
+            "ORDER BY RANDOM() LIMIT ?",
+            (n,),
+        )
+        rows = [dict(r) for r in await cur.fetchall()]
+        if len(rows) < n:
+            await db.commit()
+            return None
+        for row in rows:
+            await db.execute(
+                "UPDATE configs SET status='reserved', user_id=?, reserved_at=? WHERE id=?",
+                (user_id, iso(now()), row["id"]),
+            )
+        await db.commit()
+        return rows
+
+
 async def _reserve(region, n, user_id, extra_where, order_by):
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
