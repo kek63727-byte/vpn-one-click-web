@@ -2264,7 +2264,7 @@ function renderPromoBanner() {
   const opts = document.getElementById('promoBannerOpts');
   opts.innerHTML = [1, 2, 4].map(d => {
     const price = p[String(d)];
-    if (price == null) return '';
+  if (!price) return '';
     return `
       <div class="promo-opt" onclick="selectPromoYear(${d})"
            style="flex:1;text-align:center;background:rgba(255,255,255,0.14);border-radius:12px;padding:10px 4px;cursor:pointer;">
