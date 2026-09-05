@@ -2200,7 +2200,15 @@ function renderPeriodChips() {
 
 function renderPriceSummary() {
   const p = CONFIG.plans[selTariff];
-  const fullPrice = p.prices[selDevices][selPeriod];
+  let fullPrice = p.prices[selDevices][selPeriod];
+
+  // Если акция активна и совпадает с текущим выбором тарифа/периода —
+  // используем акционную цену вместо обычной.
+  if (promoStatus.enabled && promoStatus.plan === selTariff && promoStatus.period === selPeriod) {
+    const promoPrice = promoStatus.prices?.[String(selDevices)];
+    if (promoPrice) fullPrice = promoPrice;
+  }
+
   const disc = promoDiscount > 0 ? Math.round(fullPrice * promoDiscount / 100) : 0;
   const finalPrice = fullPrice - disc;
 
