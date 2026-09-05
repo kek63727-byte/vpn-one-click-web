@@ -1045,9 +1045,9 @@ function _renderPromoYear(d) {
       <input type="number" class="adm-input-inline" id="promoP4" value="${p['4'] || ''}">
     </div>
     <div class="adm-btn primary full" style="margin-top:10px;" onclick="_promoSave()">💾 Сохранить акцию</div>
-    <div style="margin-top:10px;font-size:11.5px;color:var(--muted);text-align:center;">
-      Обычные цены тарифов не меняются. Выключить акцию — тумблер выше в 0.
-    </div>`;
+<div style="margin-top:10px;font-size:11.5px;color:var(--muted);text-align:center;">
+  Кнопка «Сохранить» сразу включает акцию. Чтобы выключить — используй тумблер выше.
+</div>
   _showAdmin('promo', '🔥 Акция · Год', d.enabled ? 'Активна' : 'Выключена', html);
   window._promoState = d;
 }
@@ -1066,12 +1066,15 @@ async function _promoSave() {
     2: parseInt(document.getElementById('promoP2').value, 10) || 0,
     4: parseInt(document.getElementById('promoP4').value, 10) || 0,
   };
-  const d = await _adminFetch('/admin/promo_year/set', { plan, period, prices });
-  if (d) { showToast('✅ Сохранено'); adminPromoYear(); }
-}
 
-const _origOpenAdminPromo = openAdmin;
-openAdmin = async function(section) {
-  if (section === 'promo_year') return adminPromoYear();
-  return _origOpenAdminPromo(section);
-};
+  // Проверяем, что хотя бы одна цена реально введена
+  if (!prices[1] && !prices[2] && !prices[4]) {
+    showToast('❌ Заполни хотя бы одну цену');
+    return;
+  }
+
+  // Сохраняем цены И сразу включаем акцию — так пользователю не нужно
+  // отдельно щёлкать тумблер после ввода цифр.
+  const d = await _adminFetch('/admin/promo_year/set', { plan, period, prices, enabled: true });
+  if (d) { showToast('✅ Акция сохранена и включена'); adminPromoYear(); }
+}
