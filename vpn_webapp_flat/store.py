@@ -65,9 +65,9 @@ _PROMO_FILE = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "promo
 
 PROMO = {
     "enabled": False,
-    "plan": "standard",
+    "plan": "ultimate",
     "period": "year",
-    "prices": {},  # {"1": 199, "2": 379, "4": 699}
+    "prices": {},
 }
 
 
