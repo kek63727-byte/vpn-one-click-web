@@ -52,3 +52,75 @@ async def load_from_db():
     if catalog:
         CATALOG.clear()
         CATALOG.extend(catalog)
+
+# ══════════════════════ ОТДЕЛЬНАЯ АКЦИЯ (год со скидкой) ══════════════════════
+# Полностью независима от обычных PRICES/PLANS выше. Хранится в своём JSON-файле,
+# чтобы не трогать схему БД. Когда акция выключена (enabled=False) —
+# get_promo_price всегда возвращает None, и всё работает как раньше.
+
+import json as _json
+import os as _os
+
+_PROMO_FILE = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "promo_config.json")
+
+PROMO = {
+    "enabled": False,
+    "plan": "standard",
+    "period": "year",
+    "prices": {},  # {"1": 199, "2": 379, "4": 699}
+}
+
+
+def get_promo_price(plan: str, devices: int, period: str) -> int | None:
+    """Возвращает цену акции для этой комбинации или None, если акция
+    неактивна / не относится к этому тарифу-периоду-устройству."""
+    if not PROMO.get("enabled"):
+        return None
+    if plan != PROMO.get("plan") or period != PROMO.get("period"):
+        return None
+    return PROMO.get("prices", {}).get(str(devices))
+
+
+def get_promo_public() -> dict:
+    """То, что можно безопасно отдать фронту (без авторизации) —
+    для рендера баннера актуальными цифрами."""
+    return {
+        "enabled": bool(PROMO.get("enabled")),
+        "plan": PROMO.get("plan"),
+        "period": PROMO.get("period"),
+        "prices": PROMO.get("prices", {}),
+    }
+
+
+def set_promo(enabled: bool | None = None, plan: str | None = None,
+              period: str | None = None, prices: dict | None = None):
+    if enabled is not None:
+        PROMO["enabled"] = enabled
+    if plan is not None:
+        PROMO["plan"] = plan
+    if period is not None:
+        PROMO["period"] = period
+    if prices is not None:
+        PROMO["prices"] = {str(k): int(v) for k, v in prices.items()}
+    _save_promo()
+
+
+def _save_promo():
+    try:
+        with open(_PROMO_FILE, "w", encoding="utf-8") as f:
+            _json.dump(PROMO, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def _load_promo():
+    try:
+        if _os.path.exists(_PROMO_FILE):
+            with open(_PROMO_FILE, "r", encoding="utf-8") as f:
+                data = _json.load(f)
+                PROMO.update(data)
+    except Exception:
+        pass
+
+
+_load_promo()  # подхватываем сохранённые настройки акции при импорте модуля
