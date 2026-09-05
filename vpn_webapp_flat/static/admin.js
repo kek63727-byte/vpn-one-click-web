@@ -8,7 +8,7 @@
    аватарки, скелетоны загрузки) + блок "Триал-серверы: занято/свободно".
    Все новые стили инжектятся сюда же, index.html трогать не нужно. */
 
-// ══════════════════════ СТИЛИ ══════════════════════
+// ══════════════════════ СТИЛИ ══════════════════════ 
 (function injectAdminStyles() {
   if (document.getElementById('adminUiStyles')) return;
   const css = `
@@ -998,4 +998,80 @@ const _origOpenAdminTeam = openAdmin;
 openAdmin = async function(section) {
   if (section === 'team') return adminTeam();
   return _origOpenAdminTeam(section);
+};
+
+// ══════════════════ АКЦИЯ (отдельно от обычных цен) ══════════════════
+async function adminPromoYear() {
+  _showAdmin('promo', '🔥 Акция · Год', 'Отдельная от обычных цен', _skeleton(3));
+  const d = await _adminFetch('/admin/promo_year');
+  if (!d) return;
+  _renderPromoYear(d);
+}
+
+function _renderPromoYear(d) {
+  const p = d.prices || {};
+  const html = `
+    <div class="adm-wide-card">
+      <div class="adm-wide-row">
+        <div><div class="adm-wide-title">Акция активна</div><div class="adm-wide-sub">Показывать баннер и применять цены</div></div>
+        <button class="adm-toggle ${d.enabled ? 'on' : ''}" id="promoToggle" onclick="_promoToggleEnabled()"></button>
+      </div>
+    </div>
+    <div class="adm-section-title">Тариф и период акции</div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;">
+      <select id="promoPlan" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:0 10px;height:42px;">
+        <option value="standard" ${d.plan==='standard'?'selected':''}>Standard</option>
+        <option value="premium" ${d.plan==='premium'?'selected':''}>Premium</option>
+        <option value="ultimate" ${d.plan==='ultimate'?'selected':''}>Ultimate</option>
+      </select>
+      <select id="promoPeriod" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:0 10px;height:42px;">
+        <option value="month" ${d.period==='month'?'selected':''}>1 месяц</option>
+        <option value="3month" ${d.period==='3month'?'selected':''}>3 месяца</option>
+        <option value="6month" ${d.period==='6month'?'selected':''}>6 месяцев</option>
+        <option value="year" ${d.period==='year'?'selected':''}>1 год</option>
+      </select>
+    </div>
+    <div class="adm-section-title">Цены акции, ₽</div>
+    <div class="adm-list-item" style="cursor:default;">
+      <div class="adm-list-info"><div class="adm-list-name">1 устройство</div></div>
+      <input type="number" class="adm-input-inline" id="promoP1" value="${p['1'] || ''}">
+    </div>
+    <div class="adm-list-item" style="cursor:default;">
+      <div class="adm-list-info"><div class="adm-list-name">2 устройства</div></div>
+      <input type="number" class="adm-input-inline" id="promoP2" value="${p['2'] || ''}">
+    </div>
+    <div class="adm-list-item" style="cursor:default;">
+      <div class="adm-list-info"><div class="adm-list-name">4 устройства</div></div>
+      <input type="number" class="adm-input-inline" id="promoP4" value="${p['4'] || ''}">
+    </div>
+    <div class="adm-btn primary full" style="margin-top:10px;" onclick="_promoSave()">💾 Сохранить акцию</div>
+    <div style="margin-top:10px;font-size:11.5px;color:var(--muted);text-align:center;">
+      Обычные цены тарифов не меняются. Выключить акцию — тумблер выше в 0.
+    </div>`;
+  _showAdmin('promo', '🔥 Акция · Год', d.enabled ? 'Активна' : 'Выключена', html);
+  window._promoState = d;
+}
+
+async function _promoToggleEnabled() {
+  const newEnabled = !window._promoState.enabled;
+  const d = await _adminFetch('/admin/promo_year/set', { enabled: newEnabled });
+  if (d) { showToast(newEnabled ? '✅ Акция включена' : '⏸ Акция выключена'); adminPromoYear(); }
+}
+
+async function _promoSave() {
+  const plan = document.getElementById('promoPlan').value;
+  const period = document.getElementById('promoPeriod').value;
+  const prices = {
+    1: parseInt(document.getElementById('promoP1').value, 10) || 0,
+    2: parseInt(document.getElementById('promoP2').value, 10) || 0,
+    4: parseInt(document.getElementById('promoP4').value, 10) || 0,
+  };
+  const d = await _adminFetch('/admin/promo_year/set', { plan, period, prices });
+  if (d) { showToast('✅ Сохранено'); adminPromoYear(); }
+}
+
+const _origOpenAdminPromo = openAdmin;
+openAdmin = async function(section) {
+  if (section === 'promo_year') return adminPromoYear();
+  return _origOpenAdminPromo(section);
 };
