@@ -2277,6 +2277,11 @@ function renderPromoBanner() {
 }
 
 function selectPromoYear(devices) {
+  // ← ДОБАВЬ проверку что план существует
+  if (!promoStatus.plan || !CONFIG.plans[promoStatus.plan]) {
+    showToast('❌ Ошибка конфигурации акции');
+    return;
+  }
   selectTariff(promoStatus.plan);
   selectDevices(devices);
   selectPeriod(promoStatus.period);
