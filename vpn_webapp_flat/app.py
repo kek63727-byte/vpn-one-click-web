@@ -343,19 +343,21 @@ async def api_create_payment(request):
     if plan not in PLANS or (devices, period) not in PLANS[plan]["prices"]:
         return web.json_response({"error": "bad_plan"}, status=400)
 
-    if not region:
-        picked = await _pick_region(plan)
-        if not picked:
-            return web.json_response({"error": "no_region"}, status=400)
-        region, _ = picked
-    elif store.is_premium_region(region) and not PLANS[plan]["premium_access"]:
-        return web.json_response({"error": "region_locked"}, status=400)
-
-    # Цена считается ТОЛЬКО на сервере.
-    # Сначала проверяем отдельную акцию (не трогает обычные тарифы) —
-    # если она активна и подходит под этот план/период/устройства, берём её цену.
+    # Отдельная акция (store.PROMO) — если план/период/устройства совпадают,
+    # берём акционную цену и НЕ привязываемся к одному региону: выдаём
+    # случайные свободные конфиги из разных стран, минуя выбор региона.
     promo_price = store.get_promo_price(plan, devices, period)
     is_promo = promo_price is not None
+
+    if not is_promo:
+        if not region:
+            picked = await _pick_region(plan)
+            if not picked:
+                return web.json_response({"error": "no_region"}, status=400)
+            region, _ = picked
+        elif store.is_premium_region(region) and not PLANS[plan]["premium_access"]:
+            return web.json_response({"error": "region_locked"}, status=400)
+
     full = promo_price if is_promo else pay.price_rub(plan, devices, period)
     spent = await db.total_spent(user_id)
     loyalty_discount = full * pay.loyalty_percent_for(spent) // 100
@@ -385,7 +387,9 @@ async def api_create_payment(request):
     if balance < to_pay:
         await db.log_event(user_id, "order_failed", amount=to_pay,
                             meta={"reason": "need_topup", "plan": plan, "devices": devices,
-                                  "period": period, "region": region, "balance": balance},
+                                  "period": period,
+                                  "region": region if not is_promo else "промо: разные страны",
+                                  "balance": balance},
                             source="webapp")
         return web.json_response({
             "error": "need_topup",
@@ -393,7 +397,11 @@ async def api_create_payment(request):
             "balance": balance,
         }, status=409)
 
-    reserved = await db.reserve_purchase(region, devices, user_id)
+    if is_promo:
+        reserved = await db.reserve_random(devices, user_id)
+    else:
+        reserved = await db.reserve_purchase(region, devices, user_id)
+
     if reserved is None:
         # Баланса хватает, но серверов нет — это реальный дефицит стока.
         await db.log_event(user_id, "order_failed",
@@ -402,6 +410,11 @@ async def api_create_payment(request):
         return web.json_response({"error": "no_stock"}, status=409)
 
     config_ids = [c["id"] for c in reserved]
+
+    # Для акции регион заказа — просто список реально выданных стран
+    # (конфиги могли достаться из разных регионов).
+    if is_promo:
+        region = ", ".join(sorted({c["region"] for c in reserved}))
 
     # Списываем баланс СРАЗУ. Если списание не удалось (гонка запросов,
     # баланс успел измениться) — освобождаем забронированные конфиги.
