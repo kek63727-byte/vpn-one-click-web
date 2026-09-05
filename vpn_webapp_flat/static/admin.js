@@ -1045,9 +1045,9 @@ function _renderPromoYear(d) {
       <input type="number" class="adm-input-inline" id="promoP4" value="${p['4'] || ''}">
     </div>
     <div class="adm-btn primary full" style="margin-top:10px;" onclick="_promoSave()">💾 Сохранить акцию</div>
-<div style="margin-top:10px;font-size:11.5px;color:var(--muted);text-align:center;">
-  Кнопка «Сохранить» сразу включает акцию. Чтобы выключить — используй тумблер выше.
-</div>
+    <div style="margin-top:10px;font-size:11.5px;color:var(--muted);text-align:center;">
+      Кнопка «Сохранить» сразу включает акцию. Чтобы выключить — используй тумблер выше.
+    </div>`;
   _showAdmin('promo', '🔥 Акция · Год', d.enabled ? 'Активна' : 'Выключена', html);
   window._promoState = d;
 }
