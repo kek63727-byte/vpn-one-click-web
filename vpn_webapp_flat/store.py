@@ -63,12 +63,14 @@ import os as _os
 
 _PROMO_FILE = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "promo_config.json")
 
+# ══════ РУЧНАЯ НАСТРОЙКА АКЦИИ — меняй только эти 4 строки ══════
 PROMO = {
-    "enabled": False,
-    "plan": "ultimate",
-    "period": "year",
-    "prices": {},
+    "enabled": True,               # True — акция включена, False — выключена
+    "plan": "ultimate",            # standard / premium / ultimate
+    "period": "year",              # month / 3month / 6month / year
+    "prices": {"1": 199, "2": 299, "4": 499},  # цены по числу устройств
 }
+# ══════════════════════════════════════════════════════════════
 
 
 def get_promo_price(plan: str, devices: int, period: str) -> int | None:
@@ -123,4 +125,10 @@ def _load_promo():
         pass
 
 
-_load_promo()  # подхватываем сохранённые настройки акции при импорте модуля
+# ══ ВРЕМЕННО ОТКЛЮЧЕНО ══
+# Раньше эта строка подхватывала сохранённые настройки акции из
+# promo_config.json (созданного через админку) и МОГЛА ПЕРЕЗАПИСАТЬ
+# значения PROMO выше. Пока акция настраивается вручную прямо в этом
+# файле, вызов закомментирован, чтобы файл promo_config.json (если он
+# есть на сервере) ничего не перетирал.
+# _load_promo()
